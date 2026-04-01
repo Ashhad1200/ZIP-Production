@@ -22,10 +22,12 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// Rate limiting — generous limits for development, tighten in production
+const isDev = process.env.NODE_ENV !== 'production';
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: isDev ? 1000 : 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { code: 'RATE_LIMIT', message: 'Too many requests, please try again later' } },
@@ -33,7 +35,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: isDev ? 200 : 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { code: 'RATE_LIMIT', message: 'Too many auth requests, please try again later' } },
@@ -41,7 +43,7 @@ const authLimiter = rateLimit({
 
 const verifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: isDev ? 200 : 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { code: 'RATE_LIMIT', message: 'Too many verification requests, please try again later' } },
