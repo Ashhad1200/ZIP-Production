@@ -1,0 +1,792 @@
+// ─── Generator & Datasource ─────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  FINANCE_HEAD
+  PRODUCTION_HEAD
+  LOGISTICS_HEAD
+  MARKETING_HEAD
+}
+
+enum Shift {
+  DAY
+  NIGHT
+}
+
+enum GatePassStatus {
+  CREATED
+  DISPATCHED
+  RECEIVED
+}
+
+enum OrderStatus {
+  PENDING
+  ONGOING
+  COMPLETED
+}
+
+enum ApprovalStatus {
+  AUTO_APPROVED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentMode {
+  CASH
+  CHEQUE
+  BANK_TRANSFER
+}
+
+enum PurchaseSource {
+  CONTAINER
+  SPOT_MARKET
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum NotificationType {
+  ORDER_CREATED
+  VOUCHER_APPROVAL
+  LOW_STOCK
+  GATE_PASS_RECEIVED
+  ELECTRICITY_DISCREPANCY
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  SOFT_DELETE
+}
+
+// ─── 1. User ────────────────────────────────────────────────────────────────
+
+model User {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  role        Role
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  // reverse relation for Voucher.approvedBy
+  approvedVouchers Voucher[] @relation("VoucherApprover")
+
+  @@map("users")
+}
+
+// ─── 2. Plant ───────────────────────────────────────────────────────────────
+
+model Plant {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  location String?
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  machines          Machine[]
+  productionEntries ProductionEntry[]
+  workers           Worker[]
+  scrapSales        ScrapSale[]
+
+  @@index([isDeleted])
+  @@map("plants")
+}
+
+// ─── 3. Machine ─────────────────────────────────────────────────────────────
+
+model Machine {
+  id                     String  @id @default(uuid())
+  plantId                String
+  identifier             String
+  kwhRating              Decimal
+  expectedOutputPerShift Int
+  isActive               Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  plant Plant @relation(fields: [plantId], references: [id])
+
+  @@index([plantId])
+  @@index([isDeleted])
+  @@map("machines")
+}
+
+// ─── 4. Worker ──────────────────────────────────────────────────────────────
+
+model Worker {
+  id          String  @id @default(uuid())
+  name        String
+  designation String?
+  plantId     String?
+  isActive    Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  plant             Plant?                  @relation(fields: [plantId], references: [id])
+  productionEntries ProductionEntryWorker[]
+
+  @@index([plantId])
+  @@index([isDeleted])
+  @@map("workers")
+}
+
+// ─── 5. ZipperVariant ───────────────────────────────────────────────────────
+
+model ZipperVariant {
+  id                    String  @id @default(uuid())
+  code                  String  @unique
+  name                  String
+  description           String?
+  standardGramsPerMeter Decimal
+  grainTypeId           String
+  isActive              Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  grainType          GrainType           @relation(fields: [grainTypeId], references: [id])
+  productionEntries  ProductionEntry[]
+  gatePassLineItems  GatePassLineItem[]
+  orders             Order[]
+  clientRates        ClientRate[]
+  finishedGoodsStock FinishedGoodsStock?
+
+  @@index([grainTypeId])
+  @@index([isDeleted])
+  @@map("zipper_variants")
+}
+
+// ─── 6. GrainType ───────────────────────────────────────────────────────────
+
+model GrainType {
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  name                  String
+  description           String?
+  bagWeightGrams        Int      @default(25000)
+  lowStockThresholdBags Decimal?
+  isActive              Boolean  @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  zipperVariants       ZipperVariant[]
+  rawMaterialStock     RawMaterialStock?
+  rawMaterialPurchases RawMaterialPurchase[]
+
+  @@index([isDeleted])
+  @@map("grain_types")
+}
+
+// ─── 7. ProductionEntry ─────────────────────────────────────────────────────
+
+model ProductionEntry {
+  id                          String   @id @default(uuid())
+  plantId                     String
+  shift                       Shift
+  date                        DateTime @db.Date
+  variantId                   String
+  metersProduced              Int
+  gramsPerMeter               Decimal
+  electricityUnitsConsumed    Decimal
+  electricityStartReading     Decimal?
+  electricityEndReading       Decimal?
+  hasElectricityDiscrepancy   Boolean  @default(false)
+  electricityDiscrepancyNotes String?
+  scrapWeightGrams            Int      @default(0)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  plant   Plant                   @relation(fields: [plantId], references: [id])
+  variant ZipperVariant           @relation(fields: [variantId], references: [id])
+  workers ProductionEntryWorker[]
+
+  @@unique([plantId, shift, date])
+  @@index([variantId])
+  @@index([date])
+  @@index([plantId, date])
+  @@index([isDeleted])
+  @@map("production_entries")
+}
+
+// ─── 8. ProductionEntryWorker (join table) ──────────────────────────────────
+
+model ProductionEntryWorker {
+  productionEntryId String
+  workerId          String
+
+  productionEntry ProductionEntry @relation(fields: [productionEntryId], references: [id])
+  worker          Worker          @relation(fields: [workerId], references: [id])
+
+  @@id([productionEntryId, workerId])
+  @@index([workerId])
+  @@map("production_entry_workers")
+}
+
+// ─── 9. ScrapSale ───────────────────────────────────────────────────────────
+
+model ScrapSale {
+  id               String   @id @default(uuid())
+  date             DateTime @db.Date
+  totalWeightKg    Decimal
+  ratePerKgPaisa   BigInt
+  totalAmountPaisa BigInt
+  buyerName        String?
+  plantId          String?
+  journalEntryId   String?  @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  plant        Plant?        @relation(fields: [plantId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@index([plantId])
+  @@index([date])
+  @@index([isDeleted])
+  @@map("scrap_sales")
+}
+
+// ─── 10. RawMaterialPurchase ────────────────────────────────────────────────
+
+model RawMaterialPurchase {
+  id               String         @id @default(uuid())
+  grainTypeId      String
+  numberOfBags     Decimal
+  ratePerBagPaisa  BigInt
+  totalAmountPaisa BigInt
+  purchaseDate     DateTime       @db.Date
+  source           PurchaseSource
+  journalEntryId   String?        @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  grainType    GrainType     @relation(fields: [grainTypeId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@index([grainTypeId])
+  @@index([purchaseDate])
+  @@index([isDeleted])
+  @@map("raw_material_purchases")
+}
+
+// ─── 11. RawMaterialStock ───────────────────────────────────────────────────
+
+model RawMaterialStock {
+  id          String  @id @default(uuid())
+  grainTypeId String  @unique
+  currentBags Decimal
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  grainType GrainType @relation(fields: [grainTypeId], references: [id])
+
+  @@index([updatedAt])
+  @@map("raw_material_stock")
+}
+
+// ─── 12. FinishedGoodsStock ─────────────────────────────────────────────────
+
+model FinishedGoodsStock {
+  id                String @id @default(uuid())
+  variantId         String @unique
+  currentMeters     Int
+  lowStockThreshold Int?
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  variant ZipperVariant @relation(fields: [variantId], references: [id])
+
+  @@index([updatedAt])
+  @@map("finished_goods_stock")
+}
+
+// ─── 13. Client ─────────────────────────────────────────────────────────────
+
+model Client {
+  id               String  @id @default(uuid())
+  name             String  @unique
+  contactPerson    String?
+  phone            String?
+  address          String?
+  paymentCycleDays Int     @default(30)
+  accountId        String? @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  gatePasses        GatePass[]
+  orders            Order[]
+  clientRates       ClientRate[]
+  journalEntryLines JournalEntryLine[]
+  account           Account?           @relation(fields: [accountId], references: [id])
+
+  @@index([isDeleted])
+  @@map("clients")
+}
+
+// ─── 14. ClientRate ─────────────────────────────────────────────────────────
+
+model ClientRate {
+  id                String    @id @default(uuid())
+  clientId          String
+  variantId         String
+  ratePerMeterPaisa BigInt
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  client  Client        @relation(fields: [clientId], references: [id])
+  variant ZipperVariant @relation(fields: [variantId], references: [id])
+
+  @@index([clientId])
+  @@index([variantId])
+  @@index([isDeleted])
+  @@map("client_rates")
+}
+
+// ─── 15. GatePass ───────────────────────────────────────────────────────────
+
+model GatePass {
+  id                   String         @id @default(uuid())
+  gatePassNumber       String         @unique
+  clientId             String
+  date                 DateTime       @db.Date
+  issuingManagerName   String
+  shift                Shift
+  status               GatePassStatus @default(CREATED)
+  orderId              String?
+  verifyToken          String         @unique
+  verifyTokenExpiresAt DateTime
+  receivedAt           DateTime?
+  receivedBy           String?
+  totalAmountPaisa     BigInt
+  paymentDueDate       DateTime       @db.Date
+  journalEntryId       String?        @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  client       Client             @relation(fields: [clientId], references: [id])
+  order        Order?             @relation(fields: [orderId], references: [id])
+  lineItems    GatePassLineItem[]
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+
+  @@index([clientId])
+  @@index([orderId])
+  @@index([status])
+  @@index([date])
+  @@index([clientId, date])
+  @@index([isDeleted])
+  @@map("gate_passes")
+}
+
+// ─── 16. GatePassLineItem ───────────────────────────────────────────────────
+
+model GatePassLineItem {
+  id                String @id @default(uuid())
+  gatePassId        String
+  variantId         String
+  meters            Int
+  ratePerMeterPaisa BigInt
+  lineAmountPaisa   BigInt
+
+  gatePass GatePass      @relation(fields: [gatePassId], references: [id])
+  variant  ZipperVariant @relation(fields: [variantId], references: [id])
+
+  @@index([gatePassId])
+  @@index([variantId])
+  @@map("gate_pass_line_items")
+}
+
+// ─── 17. Order ──────────────────────────────────────────────────────────────
+
+model Order {
+  id                String      @id @default(uuid())
+  orderNumber       String      @unique
+  clientId          String
+  variantId         String
+  metersOrdered     Int
+  ratePerMeterPaisa BigInt
+  totalAmountPaisa  BigInt
+  deliveryDeadline  DateTime    @db.Date
+  metersDelivered   Int         @default(0)
+  status            OrderStatus @default(PENDING)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  client     Client        @relation(fields: [clientId], references: [id])
+  variant    ZipperVariant @relation(fields: [variantId], references: [id])
+  gatePasses GatePass[]
+
+  @@index([clientId])
+  @@index([variantId])
+  @@index([status])
+  @@index([clientId, status])
+  @@index([isDeleted])
+  @@map("orders")
+}
+
+// ─── 18. Account ────────────────────────────────────────────────────────────
+
+model Account {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  name        String
+  accountType AccountType
+  parentId    String?
+  isGroup     Boolean     @default(false)
+  isActive    Boolean     @default(true)
+
+  parent            Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          Account[]          @relation("AccountHierarchy")
+  journalEntryLines JournalEntryLine[]
+  client            Client?
+
+  @@index([parentId])
+  @@index([accountType])
+  @@map("accounts")
+}
+
+// ─── 19. JournalEntry ───────────────────────────────────────────────────────
+
+model JournalEntry {
+  id            String             @id @default(uuid())
+  entryNumber   String             @unique
+  entryDate     DateTime           @db.Date
+  description   String?
+  status        JournalEntryStatus @default(DRAFT)
+  referenceType String?
+  referenceId   String?
+  postedAt      DateTime?
+  postedBy      String?
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  lines               JournalEntryLine[]
+  gatePass            GatePass?
+  voucher             Voucher?
+  scrapSale           ScrapSale?
+  rawMaterialPurchase RawMaterialPurchase?
+
+  @@index([entryDate])
+  @@index([status])
+  @@index([isDeleted])
+  @@map("journal_entries")
+}
+
+// ─── 20. JournalEntryLine ───────────────────────────────────────────────────
+
+model JournalEntryLine {
+  id                String  @id @default(uuid())
+  entryId           String
+  accountId         String
+  clientId          String?
+  description       String?
+  debitAmountPaisa  BigInt  @default(0)
+  creditAmountPaisa BigInt  @default(0)
+  lineOrder         Int     @default(0)
+
+  entry   JournalEntry @relation(fields: [entryId], references: [id])
+  account Account      @relation(fields: [accountId], references: [id])
+  client  Client?      @relation(fields: [clientId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([clientId])
+  @@map("journal_entry_lines")
+}
+
+// ─── 21. Voucher ────────────────────────────────────────────────────────────
+
+model Voucher {
+  id              String         @id @default(uuid())
+  voucherNumber   String         @unique
+  title           String
+  description     String?
+  date            DateTime       @db.Date
+  amountPaisa     BigInt
+  categoryId      String
+  paymentMode     PaymentMode
+  chequeNumber    String?
+  companyId       String
+  approvalStatus  ApprovalStatus
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  journalEntryId  String?        @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  company      Company         @relation(fields: [companyId], references: [id])
+  journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  approver     User?           @relation("VoucherApprover", fields: [approvedBy], references: [id])
+
+  @@index([categoryId])
+  @@index([companyId])
+  @@index([approvalStatus])
+  @@index([date])
+  @@index([isDeleted])
+  @@map("vouchers")
+}
+
+// ─── 22. ExpenseCategory ────────────────────────────────────────────────────
+
+model ExpenseCategory {
+  id       String  @id @default(uuid())
+  name     String
+  parentId String?
+  isActive Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  parent   ExpenseCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children ExpenseCategory[] @relation("CategoryHierarchy")
+  vouchers Voucher[]
+
+  @@index([parentId])
+  @@index([isDeleted])
+  @@map("expense_categories")
+}
+
+// ─── 23. Company ────────────────────────────────────────────────────────────
+
+model Company {
+  id           String  @id @default(uuid())
+  name         String  @unique
+  taxStructure String?
+  isActive     Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  vouchers Voucher[]
+
+  @@index([isDeleted])
+  @@map("companies")
+}
+
+// ─── 24. Notification ───────────────────────────────────────────────────────
+
+model Notification {
+  id              String           @id @default(uuid())
+  recipientUserId String?
+  recipientRole   Role?
+  type            NotificationType
+  title           String
+  message         String
+  referenceType   String?
+  referenceId     String?
+  isRead          Boolean          @default(false)
+  readAt          DateTime?
+  createdAt       DateTime         @default(now())
+
+  recipient User? @relation(fields: [recipientUserId], references: [id])
+
+  @@index([recipientUserId])
+  @@index([recipientRole])
+  @@index([isRead])
+  @@index([recipientUserId, isRead])
+  @@map("notifications")
+}
+
+// ─── 25. AuditLog ───────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  entityType    String
+  entityId      String
+  action        AuditAction
+  previousValue Json?
+  newValue      Json
+  changedFields String[]
+  userId        String
+  reason        String?
+  timestamp     DateTime    @default(now())
+  ipAddress     String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ─── 26. SystemSetting ──────────────────────────────────────────────────────
+
+model SystemSetting {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  value       String
+  description String?
+
+  @@map("system_settings")
+}
