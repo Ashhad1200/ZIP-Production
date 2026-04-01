@@ -6,7 +6,8 @@ import { generateSequenceNumber } from '../utils/sequence';
 import { accountingService } from './accounting.service';
 import { auditService } from './audit.service';
 import { notificationService } from './notification.service';
-import { toISODate, startOfDay, endOfDay } from '../utils/date';
+import { inventoryService } from './inventory.service';
+import { toISODate } from '../utils/date';
 
 const SHIFT_HOURS = 12;
 const ELECTRICITY_DISCREPANCY_THRESHOLD_PERCENT = 15;
@@ -238,6 +239,10 @@ export class ProductionService {
           referenceId: entry.id,
         });
       }
+
+      // 10. Check low stock after consumption/production
+      await inventoryService.checkAndNotifyLowStock('raw_material', variant.grainTypeId);
+      await inventoryService.checkAndNotifyLowStock('finished_goods', input.variantId);
 
       return {
         id: entry.id,

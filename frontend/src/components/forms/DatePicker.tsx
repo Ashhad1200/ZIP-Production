@@ -5,6 +5,7 @@ interface DatePickerProps {
   value: string; // ISO date string YYYY-MM-DD
   onChange: (isoDate: string) => void;
   label?: string;
+  placeholder?: string;
   disabled?: boolean;
   error?: string;
   min?: string;
@@ -16,13 +17,14 @@ export function DatePicker({
   value,
   onChange,
   label,
+  placeholder,
   disabled = false,
   error,
   min,
   max,
   className = '',
 }: DatePickerProps) {
-  const displayValue = value ? formatDatePKT(value) : '';
+  const displayValue = value ? formatDatePKT(value) : (placeholder ?? '');
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const dateVal = e.target.value; // YYYY-MM-DD from native picker
