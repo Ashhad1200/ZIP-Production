@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "ZIP Production ERP",
+    "companyName": "ZIP Production"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "production": "Production",
+    "inventory": "Inventory",
+    "gatePass": "Gate Pass",
+    "orders": "Orders",
+    "finance": "Finance",
+    "settings": "Settings",
+    "clientLedger": "Client Ledger",
+    "vouchers": "Vouchers",
+    "reports": "Reports"
+  },
+  "auth": {
+    "selectUser": "Select your account",
+    "login": "Log In",
+    "logout": "Log Out"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search...",
+    "loading": "Loading...",
+    "noData": "No data available",
+    "confirm": "Confirm",
+    "back": "Back"
+  },
+  "status": {
+    "created": "Created",
+    "dispatched": "Dispatched",
+    "received": "Received",
+    "pending": "Pending",
+    "ongoing": "Ongoing",
+    "completed": "Completed",
+    "approved": "Approved",
+    "rejected": "Rejected"
+  }
+}

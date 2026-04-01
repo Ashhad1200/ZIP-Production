@@ -1,0 +1,196 @@
+import React, { Suspense, useState } from 'react';
+import { Navigate, Outlet, type RouteObject } from 'react-router-dom';
+import { useAuth } from './hooks/useAuth';
+import { useRole } from './hooks/useRole';
+import { Sidebar, Header, MobileNav } from './components/layout';
+import { LoadingSpinner } from './components/ui';
+import { ROLES } from './utils/constants';
+
+// --------------- Lazy-loaded pages ---------------
+const LoginPage = React.lazy(() =>
+  import('./pages/Login/LoginPage').then((m) => ({ default: m.LoginPage })),
+);
+const DashboardPage = React.lazy(
+  () => import('./pages/Dashboard/DashboardPage'),
+);
+const ProductionPage = React.lazy(
+  () => import('./pages/Production/ProductionPage'),
+);
+const InventoryPage = React.lazy(
+  () => import('./pages/Inventory/InventoryPage'),
+);
+const GatePassPage = React.lazy(
+  () => import('./pages/GatePass/GatePassPage'),
+);
+const OrdersPage = React.lazy(() => import('./pages/Orders/OrdersPage'));
+const FinancePage = React.lazy(() => import('./pages/Finance/FinancePage'));
+const ClientLedgerPage = React.lazy(
+  () => import('./pages/Finance/ClientLedgerPage'),
+);
+const VouchersPage = React.lazy(
+  () => import('./pages/Finance/VouchersPage'),
+);
+const ReportsPage = React.lazy(() => import('./pages/Finance/ReportsPage'));
+const SettingsPage = React.lazy(
+  () => import('./pages/Settings/SettingsPage'),
+);
+const VerifyPage = React.lazy(() => import('./pages/Verify/VerifyPage'));
+const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
+
+// --------------- Guards ---------------
+
+function RoleGuard({
+  roles,
+  children,
+}: {
+  roles: string[];
+  children: React.ReactNode;
+}) {
+  const { hasRole } = useRole();
+  if (!hasRole(...roles)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
+function ProtectedLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  if (isLoading) return <LoadingSpinner size="lg" />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((c) => !c)}
+      />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Header onMenuToggle={() => setSidebarCollapsed((c) => !c)} />
+        <main className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
+          <Suspense fallback={<LoadingSpinner />}>
+            <Outlet />
+          </Suspense>
+        </main>
+        <MobileNav />
+      </div>
+    </div>
+  );
+}
+
+// --------------- Lazy wrapper ---------------
+function Lazy({ element: El }: { element: React.LazyExoticComponent<React.ComponentType> }) {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <El />
+    </Suspense>
+  );
+}
+
+// --------------- Route config ---------------
+const allRoles = Object.values(ROLES);
+
+export const routes: RouteObject[] = [
+  // Public routes
+  {
+    path: '/login',
+    element: <Lazy element={LoginPage} />,
+  },
+  {
+    path: '/verify',
+    element: <Lazy element={VerifyPage} />,
+  },
+
+  // Protected routes
+  {
+    element: <ProtectedLayout />,
+    children: [
+      {
+        index: true,
+        element: (
+          <RoleGuard roles={allRoles}>
+            <Lazy element={DashboardPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'production/*',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD]}>
+            <Lazy element={ProductionPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'inventory/*',
+        element: (
+          <RoleGuard
+            roles={[
+              ROLES.SUPER_ADMIN,
+              ROLES.PRODUCTION_HEAD,
+              ROLES.FINANCE_HEAD,
+              ROLES.LOGISTICS_HEAD,
+            ]}
+          >
+            <Lazy element={InventoryPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'gate-pass/*',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.LOGISTICS_HEAD]}>
+            <Lazy element={GatePassPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'orders/*',
+        element: (
+          <RoleGuard
+            roles={[
+              ROLES.SUPER_ADMIN,
+              ROLES.FINANCE_HEAD,
+              ROLES.PRODUCTION_HEAD,
+              ROLES.MARKETING_HEAD,
+            ]}
+          >
+            <Lazy element={OrdersPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'finance',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD]}>
+            <Outlet />
+          </RoleGuard>
+        ),
+        children: [
+          { index: true, element: <Lazy element={FinancePage} /> },
+          {
+            path: 'client-ledger',
+            element: <Lazy element={ClientLedgerPage} />,
+          },
+          { path: 'vouchers', element: <Lazy element={VouchersPage} /> },
+          { path: 'reports', element: <Lazy element={ReportsPage} /> },
+        ],
+      },
+      {
+        path: 'settings/*',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD]}>
+            <Lazy element={SettingsPage} />
+          </RoleGuard>
+        ),
+      },
+    ],
+  },
+
+  // 404
+  {
+    path: '*',
+    element: <Lazy element={NotFoundPage} />,
+  },
+];
