@@ -1,24 +1,31 @@
 import { useQuery } from '@tanstack/react-query';
+import { Navigate, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { LoadingSpinner } from '../../components/ui';
 import type { User } from '../../types';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['auth', 'users'],
     queryFn: async () => {
-      const res = await api.get<User[]>('/auth/users');
-      return res.data;
+      const res = await api.get<{ data: User[] }>('/auth/users');
+      return res.data.data;
     },
   });
 
   const handleLogin = async (userId: string) => {
     await login(userId);
-    window.location.href = '/';
+    navigate('/', { replace: true });
   };
+
+  // Redirect if already authenticated
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
 
   if (isLoading) return <LoadingSpinner size="lg" />;
 

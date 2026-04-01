@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 001-zipper-erp-system]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: zipproduction
+          POSTGRES_PASSWORD: zipproduction_dev
+          POSTGRES_DB: zipproduction_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL_TEST: postgresql://zipproduction:zipproduction_dev@localhost:5432/zipproduction_test?schema=public
+      DATABASE_URL: postgresql://zipproduction:zipproduction_dev@localhost:5432/zipproduction_test?schema=public
+      JWT_SECRET: test-secret
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci
+      - run: cd backend && npx prisma generate
+      - run: cd backend && npx prisma migrate deploy
+      - run: cd backend && npm run lint
+      - run: cd backend && npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci
+      - run: cd frontend && npm run lint
+      - run: cd frontend && npm test

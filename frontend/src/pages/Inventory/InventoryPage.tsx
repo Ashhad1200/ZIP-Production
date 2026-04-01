@@ -1,8 +1,18 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { RawMaterialStock } from './RawMaterialStock';
+import { PurchaseForm } from './PurchaseForm';
+import { FinishedGoodsStock } from './FinishedGoodsStock';
+import { ConsumptionReport } from './ConsumptionReport';
+
 export default function InventoryPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
-      <p className="mt-2 text-gray-600">Inventory module</p>
-    </div>
+    <Routes>
+      <Route index element={<RawMaterialStock />} />
+      <Route path="raw-materials" element={<RawMaterialStock />} />
+      <Route path="purchases" element={<PurchaseForm />} />
+      <Route path="finished-goods" element={<FinishedGoodsStock />} />
+      <Route path="consumption-report" element={<ConsumptionReport />} />
+      <Route path="*" element={<Navigate to="/inventory" replace />} />
+    </Routes>
   );
 }

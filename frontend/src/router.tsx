@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth';
 import { useRole } from './hooks/useRole';
 import { Sidebar, Header, MobileNav } from './components/layout';
 import { LoadingSpinner } from './components/ui';
+import { OfflineBanner } from './components/ui/OfflineBanner';
 import { ROLES } from './utils/constants';
 
 // --------------- Lazy-loaded pages ---------------
@@ -21,6 +22,9 @@ const InventoryPage = React.lazy(
 );
 const GatePassPage = React.lazy(
   () => import('./pages/GatePass/GatePassPage'),
+);
+const VerifyGatePassPage = React.lazy(() =>
+  import('./pages/GatePass/VerifyGatePass').then((m) => ({ default: m.VerifyGatePass })),
 );
 const OrdersPage = React.lazy(() => import('./pages/Orders/OrdersPage'));
 const FinancePage = React.lazy(() => import('./pages/Finance/FinancePage'));
@@ -67,6 +71,7 @@ function ProtectedLayout() {
         onToggle={() => setSidebarCollapsed((c) => !c)}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
+        <OfflineBanner />
         <Header onMenuToggle={() => setSidebarCollapsed((c) => !c)} />
         <main className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
           <Suspense fallback={<LoadingSpinner />}>
@@ -100,6 +105,10 @@ export const routes: RouteObject[] = [
   {
     path: '/verify',
     element: <Lazy element={VerifyPage} />,
+  },
+  {
+    path: '/gp-verify',
+    element: <Lazy element={VerifyGatePassPage} />,
   },
 
   // Protected routes
@@ -170,10 +179,10 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Lazy element={FinancePage} /> },
           {
-            path: 'client-ledger',
+            path: 'client-ledger/*',
             element: <Lazy element={ClientLedgerPage} />,
           },
-          { path: 'vouchers', element: <Lazy element={VouchersPage} /> },
+          { path: 'vouchers/*', element: <Lazy element={VouchersPage} /> },
           { path: 'reports', element: <Lazy element={ReportsPage} /> },
         ],
       },

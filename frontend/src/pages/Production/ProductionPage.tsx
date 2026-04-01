@@ -1,8 +1,19 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ProductionEntries } from './ProductionEntries';
+import { ProductionEntryForm } from './ProductionEntryForm';
+import { DailyProgressReport } from './DailyProgressReport';
+import { ScrapSales } from './ScrapSales';
+import { Discrepancies } from './Discrepancies';
+
 export default function ProductionPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">Production</h1>
-      <p className="mt-2 text-gray-600">Production module</p>
-    </div>
+    <Routes>
+      <Route index element={<ProductionEntries />} />
+      <Route path="new" element={<ProductionEntryForm />} />
+      <Route path="daily-report" element={<DailyProgressReport />} />
+      <Route path="scrap-sales" element={<ScrapSales />} />
+      <Route path="discrepancies" element={<Discrepancies />} />
+      <Route path="*" element={<Navigate to="/production" replace />} />
+    </Routes>
   );
 }

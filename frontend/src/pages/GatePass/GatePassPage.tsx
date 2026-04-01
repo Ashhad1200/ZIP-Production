@@ -1,8 +1,17 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { GatePassList } from './GatePassList';
+import { GatePassForm } from './GatePassForm';
+import { GatePassDetail } from './GatePassDetail';
+import { GatePassPDF } from './GatePassPDF';
+
 export default function GatePassPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900">Gate Pass</h1>
-      <p className="mt-2 text-gray-600">Gate Pass module</p>
-    </div>
+    <Routes>
+      <Route index element={<GatePassList />} />
+      <Route path="new" element={<GatePassForm />} />
+      <Route path=":id" element={<GatePassDetail />} />
+      <Route path=":id/pdf" element={<GatePassPDF />} />
+      <Route path="*" element={<Navigate to="/gate-pass" replace />} />
+    </Routes>
   );
 }

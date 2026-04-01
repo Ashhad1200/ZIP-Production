@@ -26,8 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data, isLoading } = useQuery<User>({
     queryKey: ['auth', 'me'],
     queryFn: async () => {
-      const res = await api.get<User>('/auth/me');
-      return res.data;
+      const res = await api.get<{ data: User }>('/auth/me');
+      return res.data.data;
     },
     retry: false,
     staleTime: Infinity,
@@ -39,8 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (userId: string) => {
-      const res = await api.post<User>('/auth/login', { userId });
-      setUser(res.data);
+      const res = await api.post<{ data: User }>('/auth/login', { userId });
+      setUser(res.data.data);
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
     },
     [queryClient],

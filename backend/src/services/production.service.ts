@@ -675,7 +675,7 @@ export class ProductionService {
       const saleDate = new Date(input.date + 'T00:00:00.000Z');
 
       // Generate journal entry number
-      const entryNumber = await generateSequenceNumber('JE', 'voucher');
+      const entryNumber = await generateSequenceNumber('JE', 'journalEntry');
 
       // Get accounts for journal entry
       const cashAccount = await accountingService.getAccountByCode('CASH', tx);

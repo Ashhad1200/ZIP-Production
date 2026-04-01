@@ -1,14 +1,17 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import { appConfig } from './config/app';
 import { errorHandler } from './middleware/error-handler.middleware';
 import routes from './routes';
 
-dotenv.config();
+// BigInt JSON serialization support (Prisma returns BigInt for paisa fields)
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
+  return this.toString();
+};
 
 const app = express();
 
@@ -49,8 +52,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Apply rate limiters
-app.use('/api/v1/auth', authLimiter);
+// Apply rate limiters — auth limiter only on login POST, not GET /users or /me
+app.post('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/gate-passes/verify', verifyLimiter);
 app.use('/api/v1', generalLimiter);
 

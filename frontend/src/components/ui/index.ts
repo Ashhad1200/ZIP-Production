@@ -6,3 +6,5 @@ export { ConfirmDialog } from './ConfirmDialog';
 export { StatusBadge } from './StatusBadge';
 export { LoadingSpinner } from './LoadingSpinner';
 export { EmptyState } from './EmptyState';
+export { OfflineBanner } from './OfflineBanner';
+export { ConflictResolutionDialog } from './ConflictResolutionDialog';
