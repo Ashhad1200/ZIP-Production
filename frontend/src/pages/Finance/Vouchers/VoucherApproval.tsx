@@ -11,7 +11,6 @@ import {
   type Voucher,
   type ApproveRejectPayload,
 } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 import { formatDatePKT } from '../../../utils/date';
 import { POLLING_INTERVALS } from '../../../utils/constants';
 
@@ -154,7 +153,7 @@ export function VoucherApproval() {
                   <div>
                     <span className="text-gray-500">Amount</span>
                     <p className="font-semibold text-gray-900">
-                      {formatPaisaToRupees(voucher.amountPaisa)}
+                      {voucher.amountDisplay}
                     </p>
                   </div>
                   <div>
@@ -253,7 +252,7 @@ export function VoucherApproval() {
                     </p>
                     <p className="font-medium text-gray-900">{voucher.title}</p>
                     <p className="text-sm text-gray-500">
-                      {formatPaisaToRupees(voucher.amountPaisa)} •{' '}
+                      {voucher.amountDisplay} •{' '}
                       {formatDatePKT(voucher.date)}
                     </p>
                   </div>

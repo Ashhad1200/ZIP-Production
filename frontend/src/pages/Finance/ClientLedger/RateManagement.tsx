@@ -10,7 +10,6 @@ import {
   type ClientRate,
   type UpdateRatePayload,
 } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 import { formatDatePKT } from '../../../utils/date';
 
 export function RateManagement() {
@@ -137,7 +136,7 @@ export function RateManagement() {
                   </button>
                 </div>
                 <p className="mt-2 text-lg font-bold text-blue-600">
-                  {formatPaisaToRupees(rate.ratePerMeterPaisa)}
+                  {rate.ratePerMeterDisplay}
                   <span className="text-sm font-normal text-gray-500">
                     /meter
                   </span>
@@ -183,7 +182,7 @@ export function RateManagement() {
                       {rate.variant.code} - {rate.variant.name}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-medium">
-                      {formatPaisaToRupees(rate.ratePerMeterPaisa)}
+                      {rate.ratePerMeterDisplay}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                       {formatDatePKT(rate.effectiveFrom)}

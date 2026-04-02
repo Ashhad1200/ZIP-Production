@@ -6,7 +6,6 @@ import { SearchableSelect } from '../../../components/forms';
 import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { financeApi } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 
 const MONTHS = [
   { value: '1', label: 'January' },
@@ -110,24 +109,24 @@ export function MonthlyReport() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KPICard
               title="Opening Balance"
-              value={formatPaisaToRupees(report.openingBalancePaisa)}
+              value={report.openingBalanceDisplay}
               icon={<Minus className="text-gray-500" size={20} />}
             />
             <KPICard
               title="Total Inflow"
-              value={formatPaisaToRupees(report.inflowPaisa)}
+              value={report.inflow.totalDisplay}
               icon={<ArrowDown className="text-green-600" size={20} />}
               className="border-green-200 bg-green-50"
             />
             <KPICard
               title="Total Outflow"
-              value={formatPaisaToRupees(report.outflowPaisa)}
+              value={report.outflow.totalDisplay}
               icon={<ArrowUp className="text-red-600" size={20} />}
               className="border-red-200 bg-red-50"
             />
             <KPICard
               title="Closing Balance"
-              value={formatPaisaToRupees(report.closingBalancePaisa)}
+              value={report.closingBalanceDisplay}
               icon={<BarChart3 className="text-blue-600" size={20} />}
               className="border-blue-200 bg-blue-50"
             />
@@ -142,13 +141,13 @@ export function MonthlyReport() {
               <div className="rounded-lg bg-green-50 p-4">
                 <p className="text-sm text-gray-500">Client Payments</p>
                 <p className="text-lg font-bold text-green-700">
-                  {formatPaisaToRupees(report.inflowBreakdown.clientPayments)}
+                  {report.inflow.clientPaymentsDisplay}
                 </p>
               </div>
               <div className="rounded-lg bg-green-50 p-4">
                 <p className="text-sm text-gray-500">Scrap Sales</p>
                 <p className="text-lg font-bold text-green-700">
-                  {formatPaisaToRupees(report.inflowBreakdown.scrapSales)}
+                  {report.inflow.scrapSalesDisplay}
                 </p>
               </div>
             </div>
@@ -159,7 +158,7 @@ export function MonthlyReport() {
             <h2 className="mb-3 text-lg font-semibold text-gray-900">
               Outflow by Category
             </h2>
-            {report.outflowByCategory.length === 0 ? (
+            {report.outflow.categories.length === 0 ? (
               <p className="text-sm text-gray-500">
                 No expense data for this period
               </p>
@@ -180,25 +179,24 @@ export function MonthlyReport() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {report.outflowByCategory.map((cat) => (
-                      <tr key={cat.category}>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                          {cat.category}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
-                          {formatPaisaToRupees(cat.amountPaisa)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
-                          {report.outflowPaisa > 0
-                            ? (
-                                (cat.amountPaisa / report.outflowPaisa) *
-                                100
-                              ).toFixed(1)
-                            : '0.0'}
-                          %
-                        </td>
-                      </tr>
-                    ))}
+                    {report.outflow.categories.map((cat) => {
+                      const outflowTotal = Number(report.outflow.total);
+                      const catAmount = Number(cat.totalPaisa);
+                      const pct = outflowTotal > 0 ? ((catAmount / outflowTotal) * 100).toFixed(1) : '0.0';
+                      return (
+                        <tr key={cat.categoryId}>
+                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
+                            {cat.categoryName}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
+                            {cat.totalDisplay}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                            {pct}%
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
@@ -206,7 +204,7 @@ export function MonthlyReport() {
                         Total
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold text-gray-900">
-                        {formatPaisaToRupees(report.outflowPaisa)}
+                        {report.outflow.totalDisplay}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-gray-500">
                         100%

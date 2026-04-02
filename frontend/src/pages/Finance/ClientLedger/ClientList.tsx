@@ -4,7 +4,6 @@ import { Search, AlertTriangle } from 'lucide-react';
 import { DataTable, type Column } from '../../../components/ui';
 import { useSmartQuery } from '../../../hooks/useSmartQuery';
 import { financeApi, type ClientWithBalance } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 import { POLLING_INTERVALS, PAGINATION_DEFAULTS } from '../../../utils/constants';
 
 export function ClientList() {
@@ -47,13 +46,13 @@ export function ClientList() {
       key: 'totalDebits',
       header: 'Total Debits',
       hideOnMobile: true,
-      render: (row) => formatPaisaToRupees(row.totalDebitsPaisa),
+      render: (row) => row.totalDebitsDisplay,
     },
     {
       key: 'totalCredits',
       header: 'Total Credits',
       hideOnMobile: true,
-      render: (row) => formatPaisaToRupees(row.totalCreditsPaisa),
+      render: (row) => row.totalCreditsDisplay,
     },
     {
       key: 'outstanding',
@@ -62,12 +61,12 @@ export function ClientList() {
       render: (row) => (
         <span
           className={
-            row.outstandingPaisa > 0
+            Number(row.outstanding) > 0
               ? 'font-semibold text-red-600'
               : 'text-gray-900'
           }
         >
-          {formatPaisaToRupees(row.outstandingPaisa)}
+          {row.outstandingDisplay}
         </span>
       ),
     },
@@ -78,11 +77,11 @@ export function ClientList() {
       render: (row) => (
         <span
           className={
-            row.overdueAmountPaisa > 0 ? 'font-semibold text-red-600' : ''
+            Number(row.overdueAmountPaisa) > 0 ? 'font-semibold text-red-600' : ''
           }
         >
-          {row.overdueAmountPaisa > 0
-            ? formatPaisaToRupees(row.overdueAmountPaisa)
+          {Number(row.overdueAmountPaisa) > 0
+            ? row.overdueAmountDisplay
             : '—'}
         </span>
       ),
@@ -93,10 +92,10 @@ export function ClientList() {
       hideOnMobile: true,
       sortable: true,
       render: (row) =>
-        row.maxDaysOverdue > 0 ? (
+        row.daysOverdue > 0 ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
             <AlertTriangle size={12} />
-            {row.maxDaysOverdue}d
+            {row.daysOverdue}d
           </span>
         ) : (
           '—'
@@ -117,33 +116,33 @@ export function ClientList() {
           <span className="text-gray-500">Outstanding</span>
           <p
             className={
-              row.outstandingPaisa > 0
+              Number(row.outstanding) > 0
                 ? 'font-semibold text-red-600'
                 : 'text-gray-900'
             }
           >
-            {formatPaisaToRupees(row.outstandingPaisa)}
+            {row.outstandingDisplay}
           </p>
         </div>
         <div>
           <span className="text-gray-500">Overdue</span>
           <p
             className={
-              row.overdueAmountPaisa > 0
+              Number(row.overdueAmountPaisa) > 0
                 ? 'font-semibold text-red-600'
                 : 'text-gray-900'
             }
           >
-            {row.overdueAmountPaisa > 0
-              ? formatPaisaToRupees(row.overdueAmountPaisa)
+            {Number(row.overdueAmountPaisa) > 0
+              ? row.overdueAmountDisplay
               : '—'}
           </p>
         </div>
       </div>
-      {row.maxDaysOverdue > 0 && (
+      {row.daysOverdue > 0 && (
         <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
           <AlertTriangle size={12} />
-          {row.maxDaysOverdue} days overdue
+          {row.daysOverdue} days overdue
         </span>
       )}
     </div>

@@ -16,7 +16,6 @@ import {
   financeApi,
   type LedgerEntry,
 } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 import { formatDatePKT } from '../../../utils/date';
 import { POLLING_INTERVALS, PAGINATION_DEFAULTS } from '../../../utils/constants';
 import { PaymentForm } from './PaymentForm';
@@ -108,7 +107,7 @@ export function LedgerDetail() {
       header: 'Amount',
       render: (row) => (
         <span className="font-medium">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
       ),
     },
@@ -116,7 +115,7 @@ export function LedgerDetail() {
       key: 'runningBalance',
       header: 'Balance',
       hideOnMobile: true,
-      render: (row) => formatPaisaToRupees(row.runningBalancePaisa),
+      render: (row) => row.runningBalanceDisplay,
     },
     {
       key: 'overdue',
@@ -155,7 +154,7 @@ export function LedgerDetail() {
       )}
       <div className="flex items-center justify-between">
         <span className="font-semibold">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
         {row.isOverdue && row.daysOverdue && (
           <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
@@ -241,20 +240,20 @@ export function LedgerDetail() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <KPICard
             title="Total Debits"
-            value={formatPaisaToRupees(ledger.summary.totalDebitsPaisa)}
+            value={ledger.summary.totalDebitsDisplay}
             icon={<TrendingUp className="text-green-600" size={20} />}
           />
           <KPICard
             title="Total Credits"
-            value={formatPaisaToRupees(ledger.summary.totalCreditsPaisa)}
+            value={ledger.summary.totalCreditsDisplay}
             icon={<TrendingDown className="text-blue-600" size={20} />}
           />
           <KPICard
             title="Outstanding"
-            value={formatPaisaToRupees(ledger.summary.outstandingPaisa)}
+            value={ledger.summary.outstandingDisplay}
             icon={<Wallet className="text-red-600" size={20} />}
             className={
-              ledger.summary.outstandingPaisa > 0
+              Number(ledger.summary.outstanding) > 0
                 ? 'border-red-200 bg-red-50'
                 : ''
             }
@@ -313,7 +312,7 @@ export function LedgerDetail() {
         <PaymentForm
           clientId={clientId}
           clientName={ledger?.client?.name ?? ''}
-          currentOutstanding={ledger?.summary?.outstandingPaisa ?? 0}
+          currentOutstanding={Number(ledger?.summary?.outstanding ?? 0)}
           onClose={() => setShowPaymentForm(false)}
           onSuccess={() => {
             setShowPaymentForm(false);

@@ -6,17 +6,19 @@ import type { PaginatedResponse } from '../types';
 export interface ClientWithBalance {
   id: string;
   name: string;
+  contactPerson?: string;
+  phone?: string;
   paymentCycleDays: number;
-  totalDebitsPaisa: number;
+  totalDebits: string;
   totalDebitsDisplay: string;
-  totalCreditsPaisa: number;
+  totalCredits: string;
   totalCreditsDisplay: string;
-  outstandingPaisa: number;
+  outstanding: string;
   outstandingDisplay: string;
-  overdueAmountPaisa: number;
+  overdueAmountPaisa: string;
   overdueAmountDisplay: string;
-  maxDaysOverdue: number;
-  version: number;
+  daysOverdue: number;
+  version?: number;
 }
 
 export interface LedgerEntry {
@@ -29,21 +31,24 @@ export interface LedgerEntry {
   gatePassNumber?: string;
   paymentMode?: string;
   chequeNumber?: string;
-  amountPaisa: number;
+  amountPaisa: string;
   amountDisplay: string;
   paymentDueDate?: string;
   isOverdue?: boolean;
   daysOverdue?: number;
-  runningBalancePaisa: number;
+  runningBalancePaisa: string;
   runningBalanceDisplay: string;
 }
 
 export interface ClientLedgerData {
   client: { id: string; name: string; paymentCycleDays: number };
   summary: {
-    totalDebitsPaisa: number;
-    totalCreditsPaisa: number;
-    outstandingPaisa: number;
+    totalDebits: string;
+    totalDebitsDisplay: string;
+    totalCredits: string;
+    totalCreditsDisplay: string;
+    outstanding: string;
+    outstandingDisplay: string;
   };
   entries: LedgerEntry[];
 }
@@ -72,7 +77,7 @@ export interface OverdueEntry {
   clientId: string;
   clientName: string;
   gatePassNumber: string;
-  amountPaisa: number;
+  amountPaisa: string;
   amountDisplay: string;
   dueDate: string;
   daysOverdue: number;
@@ -98,7 +103,7 @@ export interface Voucher {
   title: string;
   description: string | null;
   date: string;
-  amountPaisa: number;
+  amountPaisa: string;
   amountDisplay: string;
   category: { id: string; name: string };
   paymentMode: string;
@@ -136,21 +141,32 @@ export interface ApproveRejectPayload {
 }
 
 export interface MonthlyReportData {
-  period: string;
-  company: string;
-  openingBalancePaisa: number;
+  year: number;
+  month: number;
+  companyId: string | null;
+  openingBalance: string;
   openingBalanceDisplay: string;
-  inflowPaisa: number;
-  inflowDisplay: string;
-  inflowBreakdown: { clientPayments: number; scrapSales: number };
-  outflowPaisa: number;
-  outflowDisplay: string;
-  outflowByCategory: {
-    category: string;
-    amountPaisa: number;
-    amountDisplay: string;
-  }[];
-  closingBalancePaisa: number;
+  inflow: {
+    clientPayments: string;
+    clientPaymentsDisplay: string;
+    scrapSales: string;
+    scrapSalesDisplay: string;
+    otherInflows: string;
+    otherInflowsDisplay: string;
+    total: string;
+    totalDisplay: string;
+  };
+  outflow: {
+    total: string;
+    totalDisplay: string;
+    categories: {
+      categoryId: string;
+      categoryName: string;
+      totalPaisa: string;
+      totalDisplay: string;
+    }[];
+  };
+  closingBalance: string;
   closingBalanceDisplay: string;
 }
 

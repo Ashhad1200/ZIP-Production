@@ -16,7 +16,7 @@ export function OverduePayments() {
   const entries = data?.data ?? [];
 
   const totalOverduePaisa = entries.reduce(
-    (sum, e) => sum + e.amountPaisa,
+    (sum, e) => sum + Number(e.amountPaisa),
     0,
   );
 
@@ -40,7 +40,7 @@ export function OverduePayments() {
       sortable: true,
       render: (row) => (
         <span className="font-medium">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
       ),
     },
@@ -74,7 +74,7 @@ export function OverduePayments() {
       <div className="text-sm text-gray-500">GP# {row.gatePassNumber}</div>
       <div className="flex items-center justify-between text-sm">
         <span className="font-semibold">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
         <span className="text-gray-500">
           Due: {formatDatePKT(row.dueDate)}

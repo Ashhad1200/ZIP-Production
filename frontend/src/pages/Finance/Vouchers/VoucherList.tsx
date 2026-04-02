@@ -11,7 +11,6 @@ import {
   financeApi,
   type Voucher,
 } from '../../../services/finance.api';
-import { formatPaisaToRupees } from '../../../utils/currency';
 import { formatDatePKT } from '../../../utils/date';
 import { POLLING_INTERVALS, PAGINATION_DEFAULTS } from '../../../utils/constants';
 import { VoucherForm } from './VoucherForm';
@@ -130,7 +129,7 @@ export function VoucherList() {
       sortable: true,
       render: (row) => (
         <span className="font-medium">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
       ),
     },
@@ -170,7 +169,7 @@ export function VoucherList() {
       <p className="font-semibold text-gray-900">{row.title}</p>
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">
-          {formatPaisaToRupees(row.amountPaisa)}
+          {row.amountDisplay}
         </span>
         <span className="text-gray-500">{formatDatePKT(row.date)}</span>
       </div>
