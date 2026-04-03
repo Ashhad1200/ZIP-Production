@@ -72,11 +72,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: '#ddd',
   },
-  colNum: { width: '8%' },
-  colVariant: { width: '32%' },
-  colMeters: { width: '20%', textAlign: 'right' },
-  colRate: { width: '20%', textAlign: 'right' },
-  colAmount: { width: '20%', textAlign: 'right' },
+  colNum: { width: '10%' },
+  colVariant: { width: '60%' },
+  colMeters: { width: '30%', textAlign: 'right' },
   totalRow: {
     flexDirection: 'row',
     marginTop: 8,
@@ -85,13 +83,13 @@ const styles = StyleSheet.create({
     borderTopColor: '#333',
   },
   totalLabel: {
-    width: '80%',
+    width: '70%',
     textAlign: 'right',
     fontFamily: 'Helvetica-Bold',
     fontSize: 12,
   },
   totalAmount: {
-    width: '20%',
+    width: '30%',
     textAlign: 'right',
     fontFamily: 'Helvetica-Bold',
     fontSize: 12,
@@ -205,35 +203,25 @@ function GatePassPDFDocument({
             <Text style={styles.colNum}>#</Text>
             <Text style={styles.colVariant}>Variant</Text>
             <Text style={styles.colMeters}>Meters</Text>
-            <Text style={styles.colRate}>Rate/m</Text>
-            <Text style={styles.colAmount}>Amount</Text>
           </View>
           {gatePass.lineItems.map((li, idx) => (
             <View key={li.id} style={styles.tableRow}>
               <Text style={styles.colNum}>{idx + 1}</Text>
               <Text style={styles.colVariant}>{li.variant.code} — {li.variant.name}</Text>
               <Text style={styles.colMeters}>{li.meters.toLocaleString()}</Text>
-              <Text style={styles.colRate}>{li.ratePerMeterDisplay}</Text>
-              <Text style={styles.colAmount}>{li.lineAmountDisplay}</Text>
             </View>
           ))}
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalAmount}>{gatePass.totalAmountDisplay}</Text>
+            <Text style={styles.totalLabel}>Total Meters:</Text>
+            <Text style={styles.totalAmount}>
+              {gatePass.lineItems.reduce((sum, li) => sum + li.meters, 0).toLocaleString()}
+            </Text>
           </View>
         </View>
 
         {/* Footer: Payment Due + QR Code */}
         <View style={styles.footer}>
           <View style={styles.footerInfo}>
-            <Text style={styles.dueDate}>
-              Payment Due:{' '}
-              {new Date(gatePass.paymentDueDate + 'T00:00:00').toLocaleDateString('en-PK', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </Text>
             <Text style={{ marginTop: 8, color: '#666' }}>Status: {gatePass.status}</Text>
           </View>
           <View style={styles.qrContainer}>

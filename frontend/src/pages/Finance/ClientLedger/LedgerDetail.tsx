@@ -52,14 +52,19 @@ export function LedgerDetail() {
   const handleDownload = async (format: 'pdf' | 'csv') => {
     if (!clientId) return;
     try {
-      const response = await financeApi.downloadLedger(clientId, format);
-      const blob = new Blob([response.data as BlobPart]);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ledger-${clientId}.${format}`;
-      a.click();
-      window.URL.revokeObjectURL(url);
+      if (format === 'csv') {
+        const response = await financeApi.downloadLedger(clientId, format);
+        const blob = new Blob([response.data as BlobPart], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ledger-${clientId}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      } else {
+        // PDF: open printable ledger in new tab
+        window.print();
+      }
     } catch {
       // Download error silently handled
     }

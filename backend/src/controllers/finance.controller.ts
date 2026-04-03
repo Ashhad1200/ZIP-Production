@@ -53,7 +53,38 @@ export class FinanceController {
         return;
       }
       const result = await financeService.getLedgerDownloadData(clientId as string, format);
-      res.json({ data: result });
+
+      if (format === 'csv') {
+        // Convert JSON array to CSV string
+        const rows = result as Record<string, string | number | boolean>[];
+        if (!rows.length) {
+          res.setHeader('Content-Type', 'text/csv');
+          res.setHeader('Content-Disposition', `attachment; filename="ledger-${clientId}.csv"`);
+          res.send('');
+          return;
+        }
+        const headers = Object.keys(rows[0]!);
+        const csvLines = [
+          headers.join(','),
+          ...rows.map((row) =>
+            headers
+              .map((h) => {
+                const val = String(row[h] ?? '');
+                return val.includes(',') || val.includes('"') || val.includes('\n')
+                  ? `"${val.replace(/"/g, '""')}"`
+                  : val;
+              })
+              .join(','),
+          ),
+        ];
+        const csvContent = csvLines.join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="ledger-${clientId}.csv"`);
+        res.send(csvContent);
+      } else {
+        // PDF: return JSON data (frontend renders with @react-pdf/renderer)
+        res.json({ data: result });
+      }
     } catch (error) {
       next(error);
     }
