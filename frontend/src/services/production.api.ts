@@ -16,6 +16,8 @@ export interface VariantRef {
 
 export type Shift = 'DAY' | 'NIGHT';
 
+export type ProductionStatus = 'IN_PRODUCTION' | 'COMPLETED';
+
 export interface RawMaterialConsumed {
   grainType: string;
   gramsConsumed: number;
@@ -27,17 +29,18 @@ export interface ProductionEntry {
   plant: EntityRef;
   shift: Shift;
   date: string;
-  variant: VariantRef;
-  metersProduced: number;
-  gramsPerMeter: number;
-  electricityUnitsConsumed: number;
+  status: ProductionStatus;
+  variant: VariantRef & { standardGramsPerMeter?: number };
+  metersProduced: number | null;
+  gramsPerMeter: number | null;
+  electricityUnitsConsumed: number | null;
   electricityStartReading: number | null;
   electricityEndReading: number | null;
   hasElectricityDiscrepancy: boolean;
   electricityDiscrepancyNotes: string | null;
   scrapWeightGrams: number;
   workers: EntityRef[];
-  rawMaterialConsumed: RawMaterialConsumed;
+  rawMaterialConsumed: RawMaterialConsumed | null;
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
@@ -50,6 +53,19 @@ export interface ProductionEntryCreateResult {
   shift: Shift;
   date: string;
   variant: VariantRef;
+  status: ProductionStatus;
+  workers: EntityRef[];
+  electricityStartReading: number | null;
+  version: number;
+}
+
+export interface ProductionEntryCompleteResult {
+  id: string;
+  plant: EntityRef;
+  shift: Shift;
+  date: string;
+  variant: VariantRef;
+  status: ProductionStatus;
   metersProduced: number;
   hasElectricityDiscrepancy: boolean;
   rawMaterialConsumed: { gramsConsumed: number; bagsConsumed: number };
@@ -62,13 +78,15 @@ export interface CreateProductionEntryPayload {
   shift: Shift;
   date: string;
   variantId: string;
+  electricityStartReading?: number;
+  workerIds?: string[];
+}
+
+export interface CompleteProductionEntryPayload {
   metersProduced: number;
   gramsPerMeter: number;
-  electricityUnitsConsumed: number;
-  electricityStartReading?: number;
   electricityEndReading?: number;
   scrapWeightGrams?: number;
-  workerIds?: string[];
 }
 
 export interface UpdateProductionEntryPayload {
@@ -216,6 +234,11 @@ export const productionApi = {
       })
       .then((r) => r.data),
 
+  completeEntry: (id: string, data: CompleteProductionEntryPayload) =>
+    api
+      .post<{ data: ProductionEntryCompleteResult }>(`/production/entries/${id}/complete`, data)
+      .then((r) => r.data),
+
   // Daily Progress Report
   getDPR: (params: DPRFilters = {}) =>
     api
@@ -274,6 +297,7 @@ export const productionApi = {
 
 // Backward-compatible type aliases for existing pages
 export type ProductionEntryPayload = CreateProductionEntryPayload;
+export type CompleteEntryPayload = CompleteProductionEntryPayload;
 export type ScrapSalePayload = CreateScrapSalePayload;
 export type DailyReport = DPRData;
 export type DailyReportPlant = DPRPlantData;

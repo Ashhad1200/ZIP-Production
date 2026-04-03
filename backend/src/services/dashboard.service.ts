@@ -230,13 +230,13 @@ export class DashboardService {
         });
       }
       const group = byDate.get(dateKey)!;
-      group.totalMeters += entry.metersProduced;
+      group.totalMeters += entry.metersProduced ?? 0;
 
       const plantName = entry.plant.name;
-      group.byPlant.set(plantName, (group.byPlant.get(plantName) ?? 0) + entry.metersProduced);
+      group.byPlant.set(plantName, (group.byPlant.get(plantName) ?? 0) + (entry.metersProduced ?? 0));
 
-      if (entry.shift === Shift.DAY) group.dayShiftMeters += entry.metersProduced;
-      else group.nightShiftMeters += entry.metersProduced;
+      if (entry.shift === Shift.DAY) group.dayShiftMeters += entry.metersProduced ?? 0;
+      else group.nightShiftMeters += entry.metersProduced ?? 0;
     }
 
     const dataPoints = Array.from(byDate.entries()).map(([date, data]) => {
@@ -285,11 +285,11 @@ export class DashboardService {
       const day = dailyMap.get(dateKey)!;
 
       if (entry.shift === Shift.DAY) {
-        dayShiftTotalMeters += entry.metersProduced;
-        day.dayMeters += entry.metersProduced;
+        dayShiftTotalMeters += entry.metersProduced ?? 0;
+        day.dayMeters += entry.metersProduced ?? 0;
       } else {
-        nightShiftTotalMeters += entry.metersProduced;
-        day.nightMeters += entry.metersProduced;
+        nightShiftTotalMeters += entry.metersProduced ?? 0;
+        day.nightMeters += entry.metersProduced ?? 0;
       }
     }
 

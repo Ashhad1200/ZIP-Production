@@ -39,6 +39,13 @@ router.put(
   productionController.updateEntry.bind(productionController)
 );
 
+router.post(
+  '/entries/:id/complete',
+  authenticate,
+  rbac(...writeRoles),
+  productionController.completeEntry.bind(productionController)
+);
+
 // Daily Progress Report
 router.get(
   '/dpr',

@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { AuditAction, NotificationType, Prisma, Role, Shift } from '@prisma/client';
+import { AuditAction, NotificationType, Prisma, ProductionStatus, Role, Shift } from '@prisma/client';
 import { calculateRawMaterialConsumption, detectElectricityDiscrepancy } from '../utils/formulas';
 import { formatPaisaToRupees } from '../utils/currency';
 import { generateSequenceNumber } from '../utils/sequence';
@@ -17,13 +17,15 @@ interface CreateProductionEntryInput {
   shift: Shift;
   date: string; // YYYY-MM-DD
   variantId: string;
+  electricityStartReading?: number;
+  workerIds?: string[];
+}
+
+interface CompleteProductionEntryInput {
   metersProduced: number;
   gramsPerMeter: number;
-  electricityUnitsConsumed: number;
-  electricityStartReading?: number;
   electricityEndReading?: number;
   scrapWeightGrams?: number;
-  workerIds?: string[];
 }
 
 interface UpdateProductionEntryInput {
@@ -46,27 +48,13 @@ interface CreateScrapSaleInput {
 
 export class ProductionService {
   /**
-   * Create a production entry with atomic side effects:
-   * - Raw material stock deduction
-   * - Finished goods stock increase
-   * - Electricity discrepancy detection
-   * - Audit log creation
+   * Step 1 of production flow: Start a production entry (IN_PRODUCTION status).
+   * Records: plant, shift, date, variant, workers, electricity start reading.
+   * Does NOT update stock — that happens on completion.
    */
   async createEntry(input: CreateProductionEntryInput, userId: string) {
-    // Validate electricity readings
-    if (
-      input.electricityStartReading !== undefined &&
-      input.electricityEndReading !== undefined &&
-      input.electricityEndReading < input.electricityStartReading
-    ) {
-      throw Object.assign(
-        new Error('Electricity end reading cannot be less than start reading'),
-        { statusCode: 422, code: 'INVALID_ELECTRICITY' }
-      );
-    }
-
     return prisma.$transaction(async (tx) => {
-      // 1. Check duplicate (plantId, shift, date)
+      // Check duplicate (plantId, shift, date)
       const entryDate = new Date(input.date + 'T00:00:00.000Z');
       const existing = await tx.productionEntry.findUnique({
         where: {
@@ -85,34 +73,116 @@ export class ProductionService {
         );
       }
 
-      // 2. Fetch variant with grain type
+      // Verify variant exists
       const variant = await tx.zipperVariant.findUnique({
         where: { id: input.variantId },
         include: { grainType: true },
       });
-
       if (!variant) {
+        throw Object.assign(new Error('Variant not found'), { statusCode: 404, code: 'VARIANT_NOT_FOUND' });
+      }
+
+      // Create entry in IN_PRODUCTION status — no stock changes yet
+      const entry = await tx.productionEntry.create({
+        data: {
+          plantId: input.plantId,
+          shift: input.shift,
+          date: entryDate,
+          variantId: input.variantId,
+          status: ProductionStatus.IN_PRODUCTION,
+          electricityStartReading: input.electricityStartReading != null
+            ? new Prisma.Decimal(input.electricityStartReading)
+            : undefined,
+          createdBy: userId,
+          updatedBy: userId,
+          ...(input.workerIds && input.workerIds.length > 0
+            ? { workers: { create: input.workerIds.map((workerId) => ({ workerId })) } }
+            : {}),
+        },
+        include: {
+          plant: { select: { id: true, name: true } },
+          variant: { select: { id: true, code: true, name: true } },
+          workers: { include: { worker: { select: { id: true, name: true } } } },
+        },
+      });
+
+      await auditService.log({
+        entityType: 'ProductionEntry',
+        entityId: entry.id,
+        action: AuditAction.CREATE,
+        newValue: { plantId: entry.plantId, shift: entry.shift, date: toISODate(entry.date), variantId: entry.variantId, status: 'IN_PRODUCTION' },
+        changedFields: ['plantId', 'shift', 'date', 'variantId', 'status'],
+        userId,
+      });
+
+      return {
+        id: entry.id,
+        plant: entry.plant,
+        shift: entry.shift,
+        date: toISODate(entry.date),
+        variant: entry.variant,
+        status: entry.status,
+        workers: entry.workers.map((w) => w.worker),
+        electricityStartReading: entry.electricityStartReading ? Number(entry.electricityStartReading) : null,
+        version: entry.version,
+      };
+    });
+  }
+
+  /**
+   * Step 2 of production flow: Complete a production entry.
+   * Records: meters produced, grams/meter, electricity end reading, scrap.
+   * Sets status = COMPLETED and runs full stock update atomically.
+   */
+  async completeEntry(id: string, input: CompleteProductionEntryInput, userId: string) {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.productionEntry.findFirst({
+        where: { id, isDeleted: false },
+        include: {
+          variant: { include: { grainType: true } },
+          plant: { select: { id: true, name: true } },
+        },
+      });
+
+      if (!existing) {
+        throw Object.assign(new Error('Production entry not found'), { statusCode: 404, code: 'NOT_FOUND' });
+      }
+
+      if (existing.status !== ProductionStatus.IN_PRODUCTION) {
         throw Object.assign(
-          new Error('Variant not found'),
-          { statusCode: 404, code: 'VARIANT_NOT_FOUND' }
+          new Error('Only IN_PRODUCTION entries can be completed'),
+          { statusCode: 409, code: 'ALREADY_COMPLETED' }
         );
       }
 
-      // 3. Calculate raw material consumption
+      // Calculate electricity units consumed
+      const startReading = existing.electricityStartReading ? Number(existing.electricityStartReading) : undefined;
+      let electricityUnitsConsumed = 0;
+      if (startReading != null && input.electricityEndReading != null) {
+        if (input.electricityEndReading < startReading) {
+          throw Object.assign(
+            new Error('Electricity end reading cannot be less than start reading'),
+            { statusCode: 422, code: 'INVALID_ELECTRICITY' }
+          );
+        }
+        electricityUnitsConsumed = input.electricityEndReading - startReading;
+      }
+
+      // 1. Calculate raw material consumption
       const { gramsConsumed, bagsConsumed } = calculateRawMaterialConsumption(
         input.gramsPerMeter,
         input.metersProduced,
-        variant.grainType.bagWeightGrams
+        existing.variant.grainType.bagWeightGrams
       );
 
-      // 4. Deduct raw material stock
+      // 2. Deduct raw material stock
       const rawMaterialStock = await tx.rawMaterialStock.findUnique({
-        where: { grainTypeId: variant.grainTypeId },
+        where: { grainTypeId: existing.variant.grainTypeId },
       });
 
       if (!rawMaterialStock) {
         throw Object.assign(
-          new Error(`No raw material stock record found for grain type ${variant.grainType.name}`),
+          new Error(`No raw material stock record found for grain type ${existing.variant.grainType.name}`),
           { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
         );
       }
@@ -127,42 +197,30 @@ export class ProductionService {
 
       await tx.rawMaterialStock.update({
         where: { id: rawMaterialStock.id },
-        data: {
-          currentBags: new Prisma.Decimal(currentBags - bagsConsumed),
-          updatedBy: userId,
-        },
+        data: { currentBags: new Prisma.Decimal(currentBags - bagsConsumed), updatedBy: userId },
       });
 
-      // 5. Increase finished goods stock
+      // 3. Increase finished goods stock
       const fgStock = await tx.finishedGoodsStock.upsert({
-        where: { variantId: input.variantId },
-        create: {
-          variantId: input.variantId,
-          currentMeters: input.metersProduced,
-          createdBy: userId,
-          updatedBy: userId,
-        },
-        update: {
-          currentMeters: { increment: input.metersProduced },
-          updatedBy: userId,
-        },
+        where: { variantId: existing.variantId },
+        create: { variantId: existing.variantId, currentMeters: input.metersProduced, createdBy: userId, updatedBy: userId },
+        update: { currentMeters: { increment: input.metersProduced }, updatedBy: userId },
       });
 
-      // 6. Electricity discrepancy check
+      // 4. Electricity discrepancy check
       const machines = await tx.machine.findMany({
-        where: { plantId: input.plantId, isActive: true },
+        where: { plantId: existing.plantId, isActive: true },
       });
 
       let hasDiscrepancy = false;
       let discrepancyNotes: string | undefined;
 
-      if (machines.length > 0) {
-        // Aggregate machine ratings for the plant
+      if (machines.length > 0 && electricityUnitsConsumed > 0) {
         const totalKwhRating = machines.reduce((sum, m) => sum + Number(m.kwhRating), 0);
         const totalExpectedOutput = machines.reduce((sum, m) => sum + m.expectedOutputPerShift, 0);
 
         const discrepancyResult = detectElectricityDiscrepancy(
-          input.electricityUnitsConsumed,
+          electricityUnitsConsumed,
           totalKwhRating,
           SHIFT_HOURS,
           input.metersProduced,
@@ -174,34 +232,22 @@ export class ProductionService {
         discrepancyNotes = discrepancyResult.notes || undefined;
       }
 
-      // 7. Create production entry
-      const entry = await tx.productionEntry.create({
+      // 5. Update entry to COMPLETED
+      const entry = await tx.productionEntry.update({
+        where: { id },
         data: {
-          plantId: input.plantId,
-          shift: input.shift,
-          date: entryDate,
-          variantId: input.variantId,
+          status: ProductionStatus.COMPLETED,
           metersProduced: input.metersProduced,
           gramsPerMeter: new Prisma.Decimal(input.gramsPerMeter),
-          electricityUnitsConsumed: new Prisma.Decimal(input.electricityUnitsConsumed),
-          electricityStartReading: input.electricityStartReading != null
-            ? new Prisma.Decimal(input.electricityStartReading)
-            : undefined,
+          electricityUnitsConsumed: new Prisma.Decimal(electricityUnitsConsumed),
           electricityEndReading: input.electricityEndReading != null
             ? new Prisma.Decimal(input.electricityEndReading)
             : undefined,
+          scrapWeightGrams: input.scrapWeightGrams ?? 0,
           hasElectricityDiscrepancy: hasDiscrepancy,
           electricityDiscrepancyNotes: discrepancyNotes,
-          scrapWeightGrams: input.scrapWeightGrams ?? 0,
-          createdBy: userId,
           updatedBy: userId,
-          ...(input.workerIds && input.workerIds.length > 0
-            ? {
-                workers: {
-                  create: input.workerIds.map((workerId) => ({ workerId })),
-                },
-              }
-            : {}),
+          version: { increment: 1 },
         },
         include: {
           plant: { select: { id: true, name: true } },
@@ -210,25 +256,17 @@ export class ProductionService {
         },
       });
 
-      // 8. Audit log
+      // 6. Audit log
       await auditService.log({
         entityType: 'ProductionEntry',
         entityId: entry.id,
-        action: AuditAction.CREATE,
-        newValue: {
-          plantId: entry.plantId,
-          shift: entry.shift,
-          date: toISODate(entry.date),
-          variantId: entry.variantId,
-          metersProduced: entry.metersProduced,
-          gramsConsumed,
-          bagsConsumed,
-        },
-        changedFields: ['plantId', 'shift', 'date', 'variantId', 'metersProduced'],
+        action: AuditAction.UPDATE,
+        newValue: { metersProduced: input.metersProduced, gramsConsumed, bagsConsumed, status: 'COMPLETED' },
+        changedFields: ['metersProduced', 'gramsPerMeter', 'electricityUnitsConsumed', 'scrapWeightGrams', 'status'],
         userId,
       });
 
-      // 9. Notify on discrepancy
+      // 7. Notify on discrepancy
       if (hasDiscrepancy) {
         await notificationService.notifyRole({
           recipientRole: Role.SUPER_ADMIN,
@@ -240,9 +278,9 @@ export class ProductionService {
         });
       }
 
-      // 10. Check low stock after consumption/production
-      await inventoryService.checkAndNotifyLowStock('raw_material', variant.grainTypeId);
-      await inventoryService.checkAndNotifyLowStock('finished_goods', input.variantId);
+      // 8. Low stock checks
+      await inventoryService.checkAndNotifyLowStock('raw_material', existing.variant.grainTypeId);
+      await inventoryService.checkAndNotifyLowStock('finished_goods', existing.variantId);
 
       return {
         id: entry.id,
@@ -250,10 +288,11 @@ export class ProductionService {
         shift: entry.shift,
         date: toISODate(entry.date),
         variant: entry.variant,
+        status: entry.status,
         metersProduced: entry.metersProduced,
         hasElectricityDiscrepancy: hasDiscrepancy,
         rawMaterialConsumed: { gramsConsumed, bagsConsumed },
-        stockUpdate: { variantId: input.variantId, newStockMeters: fgStock.currentMeters },
+        stockUpdate: { variantId: existing.variantId, newStockMeters: fgStock.currentMeters },
         version: entry.version,
       };
     });
@@ -272,6 +311,7 @@ export class ProductionService {
             id: true,
             code: true,
             name: true,
+            standardGramsPerMeter: true,
             grainType: { select: { id: true, name: true, bagWeightGrams: true } },
           },
         },
@@ -283,32 +323,38 @@ export class ProductionService {
       throw Object.assign(new Error('Production entry not found'), { statusCode: 404, code: 'NOT_FOUND' });
     }
 
-    const { gramsConsumed, bagsConsumed } = calculateRawMaterialConsumption(
-      Number(entry.gramsPerMeter),
-      entry.metersProduced,
-      entry.variant.grainType.bagWeightGrams
-    );
+    let rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number } | null = null;
+    if (entry.metersProduced != null && entry.gramsPerMeter != null) {
+      const calc = calculateRawMaterialConsumption(
+        Number(entry.gramsPerMeter),
+        entry.metersProduced,
+        entry.variant.grainType.bagWeightGrams
+      );
+      rawMaterialConsumed = { grainType: entry.variant.grainType.name, ...calc };
+    }
 
     return {
       id: entry.id,
       plant: entry.plant,
       shift: entry.shift,
       date: toISODate(entry.date),
-      variant: { id: entry.variant.id, code: entry.variant.code, name: entry.variant.name },
+      status: entry.status,
+      variant: {
+        id: entry.variant.id,
+        code: entry.variant.code,
+        name: entry.variant.name,
+        standardGramsPerMeter: Number(entry.variant.standardGramsPerMeter),
+      },
       metersProduced: entry.metersProduced,
-      gramsPerMeter: Number(entry.gramsPerMeter),
-      electricityUnitsConsumed: Number(entry.electricityUnitsConsumed),
+      gramsPerMeter: entry.gramsPerMeter != null ? Number(entry.gramsPerMeter) : null,
+      electricityUnitsConsumed: entry.electricityUnitsConsumed != null ? Number(entry.electricityUnitsConsumed) : null,
       electricityStartReading: entry.electricityStartReading ? Number(entry.electricityStartReading) : null,
       electricityEndReading: entry.electricityEndReading ? Number(entry.electricityEndReading) : null,
       hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
       electricityDiscrepancyNotes: entry.electricityDiscrepancyNotes,
       scrapWeightGrams: entry.scrapWeightGrams,
       workers: entry.workers.map((w) => w.worker),
-      rawMaterialConsumed: {
-        grainType: entry.variant.grainType.name,
-        gramsConsumed,
-        bagsConsumed,
-      },
+      rawMaterialConsumed,
       createdBy: entry.createdBy,
       createdAt: entry.createdAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString(),
@@ -371,29 +417,30 @@ export class ProductionService {
     ]);
 
     const data = entries.map((entry) => {
-      const { gramsConsumed, bagsConsumed } = calculateRawMaterialConsumption(
-        Number(entry.gramsPerMeter),
-        entry.metersProduced,
-        entry.variant.grainType.bagWeightGrams
-      );
+      let rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number } | null = null;
+      if (entry.metersProduced != null && entry.gramsPerMeter != null) {
+        const calc = calculateRawMaterialConsumption(
+          Number(entry.gramsPerMeter),
+          entry.metersProduced,
+          entry.variant.grainType.bagWeightGrams
+        );
+        rawMaterialConsumed = { grainType: entry.variant.grainType.name, ...calc };
+      }
 
       return {
         id: entry.id,
         plant: entry.plant,
         shift: entry.shift,
         date: toISODate(entry.date),
+        status: entry.status,
         variant: { id: entry.variant.id, code: entry.variant.code, name: entry.variant.name },
         metersProduced: entry.metersProduced,
-        gramsPerMeter: Number(entry.gramsPerMeter),
-        electricityUnitsConsumed: Number(entry.electricityUnitsConsumed),
+        gramsPerMeter: entry.gramsPerMeter != null ? Number(entry.gramsPerMeter) : null,
+        electricityUnitsConsumed: entry.electricityUnitsConsumed != null ? Number(entry.electricityUnitsConsumed) : null,
         hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
         scrapWeightGrams: entry.scrapWeightGrams,
         workers: entry.workers.map((w) => w.worker),
-        rawMaterialConsumed: {
-          grainType: entry.variant.grainType.name,
-          gramsConsumed,
-          bagsConsumed,
-        },
+        rawMaterialConsumed,
         createdBy: entry.createdBy,
         createdAt: entry.createdAt.toISOString(),
         version: entry.version,
@@ -438,24 +485,30 @@ export class ProductionService {
         scrapWeightGrams: existing.scrapWeightGrams,
       };
 
-      // Recalculate stock adjustments if meters or gramsPerMeter changed
-      const newMeters = input.metersProduced ?? existing.metersProduced;
-      const newGramsPerMeter = input.gramsPerMeter ?? Number(existing.gramsPerMeter);
-      const oldGramsPerMeter = Number(existing.gramsPerMeter);
+      // Recalculate stock adjustments if meters or gramsPerMeter changed (only for COMPLETED entries)
+      const newMeters = input.metersProduced ?? existing.metersProduced ?? 0;
+      const newGramsPerMeter = input.gramsPerMeter ?? (existing.gramsPerMeter != null ? Number(existing.gramsPerMeter) : 0);
+      const oldGramsPerMeter = existing.gramsPerMeter != null ? Number(existing.gramsPerMeter) : 0;
+      const oldMeters = existing.metersProduced ?? 0;
 
-      const oldConsumption = calculateRawMaterialConsumption(
-        oldGramsPerMeter,
-        existing.metersProduced,
-        existing.variant.grainType.bagWeightGrams
-      );
-      const newConsumption = calculateRawMaterialConsumption(
-        newGramsPerMeter,
-        newMeters,
-        existing.variant.grainType.bagWeightGrams
-      );
+      let bagsDiff = 0;
+      let metersDiff = 0;
 
-      const bagsDiff = newConsumption.bagsConsumed - oldConsumption.bagsConsumed;
-      const metersDiff = newMeters - existing.metersProduced;
+      if (existing.status === ProductionStatus.COMPLETED) {
+        const oldConsumption = calculateRawMaterialConsumption(
+          oldGramsPerMeter,
+          oldMeters,
+          existing.variant.grainType.bagWeightGrams
+        );
+        const newConsumption = calculateRawMaterialConsumption(
+          newGramsPerMeter,
+          newMeters,
+          existing.variant.grainType.bagWeightGrams
+        );
+
+        bagsDiff = newConsumption.bagsConsumed - oldConsumption.bagsConsumed;
+        metersDiff = newMeters - oldMeters;
+      }
 
       // Adjust raw material stock
       if (Math.abs(bagsDiff) > 0.0001) {
@@ -489,13 +542,13 @@ export class ProductionService {
       // Re-check electricity discrepancy
       let hasDiscrepancy = existing.hasElectricityDiscrepancy;
       let discrepancyNotes = existing.electricityDiscrepancyNotes;
-      const newElectricity = input.electricityUnitsConsumed ?? Number(existing.electricityUnitsConsumed);
+      const newElectricity = input.electricityUnitsConsumed ?? (existing.electricityUnitsConsumed != null ? Number(existing.electricityUnitsConsumed) : 0);
 
       const machines = await tx.machine.findMany({
         where: { plantId: existing.plantId, isActive: true },
       });
 
-      if (machines.length > 0) {
+      if (machines.length > 0 && newElectricity > 0 && newMeters > 0) {
         const totalKwhRating = machines.reduce((sum, m) => sum + Number(m.kwhRating), 0);
         const totalExpectedOutput = machines.reduce((sum, m) => sum + m.expectedOutputPerShift, 0);
 
@@ -625,14 +678,14 @@ export class ProductionService {
         const shiftEntries = plantEntries.filter((e) => e.shift === shift);
         if (shiftEntries.length === 0) return null;
 
-        const metersProduced = shiftEntries.reduce((sum, e) => sum + e.metersProduced, 0);
+        const metersProduced = shiftEntries.reduce((sum, e) => sum + (e.metersProduced ?? 0), 0);
         const variants = shiftEntries.map((e) => ({
           code: e.variant.code,
           name: e.variant.name,
-          meters: e.metersProduced,
+          meters: e.metersProduced ?? 0,
         }));
-        const electricityUnits = shiftEntries.reduce((sum, e) => sum + Number(e.electricityUnitsConsumed), 0);
-        const scrapGrams = shiftEntries.reduce((sum, e) => sum + e.scrapWeightGrams, 0);
+        const electricityUnits = shiftEntries.reduce((sum, e) => sum + (e.electricityUnitsConsumed != null ? Number(e.electricityUnitsConsumed) : 0), 0);
+        const scrapGrams = shiftEntries.reduce((sum, e) => sum + (e.scrapWeightGrams ?? 0), 0);
         const workersSet = new Set<string>();
         for (const e of shiftEntries) {
           for (const w of e.workers) {

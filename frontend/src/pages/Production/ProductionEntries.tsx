@@ -104,21 +104,22 @@ export function ProductionEntries() {
       key: 'metersProduced',
       header: 'Meters',
       sortable: true,
-      render: (row) => row.metersProduced.toLocaleString(),
+      render: (row) =>
+        row.metersProduced != null ? row.metersProduced.toLocaleString() : '—',
     },
     {
-      key: 'electricityUnitsConsumed',
-      header: 'Elec. Units',
-      sortable: true,
-      hideOnMobile: true,
-      render: (row) => row.electricityUnitsConsumed.toLocaleString(),
-    },
-    {
-      key: 'scrapWeightGrams',
-      header: 'Scrap (g)',
-      sortable: true,
-      hideOnMobile: true,
-      render: (row) => row.scrapWeightGrams.toLocaleString(),
+      key: 'status',
+      header: 'Status',
+      render: (row) =>
+        row.status === 'IN_PRODUCTION' ? (
+          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+            In Production
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+            Completed
+          </span>
+        ),
     },
     {
       key: 'hasElectricityDiscrepancy',
@@ -126,9 +127,9 @@ export function ProductionEntries() {
       render: (row) =>
         row.hasElectricityDiscrepancy ? (
           <AlertTriangle size={16} className="text-red-500" />
-        ) : (
+        ) : row.status === 'COMPLETED' ? (
           <span className="text-green-500">✓</span>
-        ),
+        ) : null,
     },
   ];
 
@@ -149,6 +150,15 @@ export function ProductionEntries() {
           >
             {row.shift}
           </span>
+          {row.status === 'IN_PRODUCTION' ? (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              In Production
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              ✓ Done
+            </span>
+          )}
           {row.hasElectricityDiscrepancy && (
             <AlertTriangle size={14} className="text-red-500" />
           )}
@@ -158,18 +168,14 @@ export function ProductionEntries() {
         <span className="text-gray-500">{row.plant.name}</span>
         <span className="font-medium">{row.variant.name}</span>
       </div>
-      <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
         <div>
           <span className="block text-gray-400">Meters</span>
-          {row.metersProduced.toLocaleString()}
-        </div>
-        <div>
-          <span className="block text-gray-400">Elec.</span>
-          {row.electricityUnitsConsumed.toLocaleString()}
+          {row.metersProduced != null ? row.metersProduced.toLocaleString() : '—'}
         </div>
         <div>
           <span className="block text-gray-400">Scrap</span>
-          {row.scrapWeightGrams.toLocaleString()}g
+          {row.scrapWeightGrams ? row.scrapWeightGrams.toLocaleString() + 'g' : '—'}
         </div>
       </div>
     </div>
@@ -265,7 +271,11 @@ export function ProductionEntries() {
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
-          onRowClick={(row) => navigate(`/production/${row.id}`)}
+          onRowClick={(row) =>
+            row.status === 'IN_PRODUCTION'
+              ? navigate(`/production/${row.id}/complete`)
+              : navigate(`/production/${row.id}`)
+          }
           keyExtractor={(row) => row.id}
           mobileCard={mobileCard}
           emptyMessage="No production entries found"

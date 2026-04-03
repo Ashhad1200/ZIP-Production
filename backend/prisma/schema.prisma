@@ -35,6 +35,11 @@ enum OrderStatus {
   COMPLETED
 }
 
+enum ProductionStatus {
+  IN_PRODUCTION
+  COMPLETED
+}
+
 enum ApprovalStatus {
   AUTO_APPROVED
   PENDING
@@ -246,19 +251,20 @@ model GrainType {
 // ─── 7. ProductionEntry ─────────────────────────────────────────────────────
 
 model ProductionEntry {
-  id                          String   @id @default(uuid())
+  id                          String            @id @default(uuid())
   plantId                     String
   shift                       Shift
-  date                        DateTime @db.Date
+  date                        DateTime          @db.Date
   variantId                   String
-  metersProduced              Int
-  gramsPerMeter               Decimal
-  electricityUnitsConsumed    Decimal
+  status                      ProductionStatus  @default(IN_PRODUCTION)
+  metersProduced              Int?
+  gramsPerMeter               Decimal?
+  electricityUnitsConsumed    Decimal?
   electricityStartReading     Decimal?
   electricityEndReading       Decimal?
-  hasElectricityDiscrepancy   Boolean  @default(false)
+  hasElectricityDiscrepancy   Boolean           @default(false)
   electricityDiscrepancyNotes String?
-  scrapWeightGrams            Int      @default(0)
+  scrapWeightGrams            Int?
 
   // audit fields
   createdBy String

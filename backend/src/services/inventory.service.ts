@@ -360,7 +360,7 @@ export class InventoryService {
 
         let consumedBags = 0;
         for (const entry of productionEntries) {
-          const gramsConsumed = Number(entry.gramsPerMeter) * entry.metersProduced;
+          const gramsConsumed = Number(entry.gramsPerMeter ?? 0) * (entry.metersProduced ?? 0);
           consumedBags += gramsConsumed / gt.bagWeightGrams;
         }
 
