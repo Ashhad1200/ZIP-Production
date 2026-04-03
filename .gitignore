@@ -36,3 +36,4 @@ postgres_data/
 # Temporary files
 *.tmp
 *.temp
+*.txt

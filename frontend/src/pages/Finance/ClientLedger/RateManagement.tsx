@@ -27,14 +27,13 @@ export function RateManagement() {
     enabled: !!clientId,
   });
 
-  const rates = data?.data ?? [];
+  const rates: ClientRate[] = data?.data ?? [];
 
-  // Active rates (no effectiveTo or effectiveTo in the future)
-  const activeRates = rates.filter(
-    (r) => !r.effectiveTo || new Date(r.effectiveTo) > new Date(),
-  );
-  const historicalRates = rates.filter(
-    (r) => r.effectiveTo && new Date(r.effectiveTo) <= new Date(),
+  // Rates that have an active (current) entry
+  const activeRates = rates.filter((r) => r.current !== null);
+  // All history entries flattened for the history table
+  const historicalEntries = rates.flatMap((r) =>
+    r.history.map((h) => ({ variant: r.variant, ...h })),
   );
 
   const mutation = useMutation({
@@ -54,7 +53,7 @@ export function RateManagement() {
 
   function openUpdateModal(rate: ClientRate) {
     setSelectedVariantId(rate.variant.id);
-    setNewRatePaisa(rate.ratePerMeterPaisa);
+    setNewRatePaisa(Number(rate.current?.ratePerMeterPaisa ?? 0));
     setShowUpdateModal(true);
     setUpdateError('');
   }
@@ -115,7 +114,7 @@ export function RateManagement() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {activeRates.map((rate) => (
               <div
-                key={rate.id}
+                key={rate.variant.id}
                 className="rounded-lg border bg-white p-4 shadow-sm"
               >
                 <div className="flex items-center justify-between">
@@ -136,13 +135,13 @@ export function RateManagement() {
                   </button>
                 </div>
                 <p className="mt-2 text-lg font-bold text-blue-600">
-                  {rate.ratePerMeterDisplay}
+                  {rate.current!.ratePerMeterDisplay}
                   <span className="text-sm font-normal text-gray-500">
                     /meter
                   </span>
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Effective from: {formatDatePKT(rate.effectiveFrom)}
+                  Effective from: {formatDatePKT(rate.current!.effectiveFrom)}
                 </p>
               </div>
             ))}
@@ -151,7 +150,7 @@ export function RateManagement() {
       </div>
 
       {/* Historical Rates */}
-      {historicalRates.length > 0 && (
+      {historicalEntries.length > 0 && (
         <div>
           <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
             <History size={18} />
@@ -176,21 +175,19 @@ export function RateManagement() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
-                {historicalRates.map((rate) => (
-                  <tr key={rate.id}>
+                {historicalEntries.map((entry) => (
+                  <tr key={entry.id}>
                     <td className="whitespace-nowrap px-4 py-3 text-sm">
-                      {rate.variant.code} - {rate.variant.name}
+                      {entry.variant.code} - {entry.variant.name}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-medium">
-                      {rate.ratePerMeterDisplay}
+                      {entry.ratePerMeterDisplay}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-                      {formatDatePKT(rate.effectiveFrom)}
+                      {formatDatePKT(entry.effectiveFrom)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-                      {rate.effectiveTo
-                        ? formatDatePKT(rate.effectiveTo)
-                        : '—'}
+                      {entry.effectiveTo ? formatDatePKT(entry.effectiveTo) : '—'}
                     </td>
                   </tr>
                 ))}

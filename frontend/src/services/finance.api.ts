@@ -83,13 +83,18 @@ export interface OverdueEntry {
   daysOverdue: number;
 }
 
-export interface ClientRate {
+export interface ClientRateEntry {
   id: string;
-  variant: { id: string; code: string; name: string };
-  ratePerMeterPaisa: number;
+  ratePerMeterPaisa: string; // BigInt serialised as string
   ratePerMeterDisplay: string;
   effectiveFrom: string;
   effectiveTo: string | null;
+}
+
+export interface ClientRate {
+  variant: { id: string; code: string; name: string };
+  current: ClientRateEntry | null;
+  history: ClientRateEntry[];
 }
 
 export interface UpdateRatePayload {
