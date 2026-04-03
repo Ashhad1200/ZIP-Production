@@ -172,26 +172,7 @@ export function GatePassForm() {
     setLineItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const calculateLineTotal = (item: LineItemRow): string => {
-    if (!item.rate || !item.meters) return '—';
-    const ratePaisa = BigInt(item.rate.ratePerMeterPaisa);
-    const total = ratePaisa * BigInt(item.meters);
-    const rupees = Number(total) / 100;
-    return `PKR ${rupees.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const calculateGrandTotal = (): string => {
-    let totalPaisa = 0n;
-    for (const item of lineItems) {
-      if (item.rate && item.meters > 0) {
-        totalPaisa += BigInt(item.rate.ratePerMeterPaisa) * BigInt(item.meters);
-      }
-    }
-    const rupees = Number(totalPaisa) / 100;
-    return `PKR ${rupees.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const validate = (): boolean => {
+  const validate= (): boolean => {
     const errs: Record<string, string> = {};
     if (!clientId) errs.clientId = 'Client is required';
     if (!date) errs.date = 'Date is required';
@@ -334,15 +315,13 @@ export function GatePassForm() {
             <p className="mt-1 text-xs text-red-600">{errors.lineItems}</p>
           )}
 
-          <div className="mt-3 overflow-x-auto">
+          <div className="mt-3">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
                   <th className="px-3 py-2">Variant</th>
                   <th className="px-3 py-2 text-right">Meters</th>
                   <th className="px-3 py-2 text-right">Stock</th>
-                  <th className="px-3 py-2 text-right">Rate/m</th>
-                  <th className="px-3 py-2 text-right">Line Total</th>
                   <th className="px-3 py-2 w-12"></th>
                 </tr>
               </thead>
@@ -355,6 +334,7 @@ export function GatePassForm() {
                         value={item.variantId}
                         onChange={(val) => updateLineItem(idx, 'variantId', val)}
                         placeholder="Select variant..."
+                        error={errors[`line_${idx}_rate`]}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -394,23 +374,6 @@ export function GatePassForm() {
                         <p className="text-xs text-red-600 mt-0.5">{errors[`line_${idx}_stock`]}</p>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                      {item.loadingRate ? (
-                        <span className="text-gray-400 text-xs">...</span>
-                      ) : item.rate ? (
-                        <span className="text-gray-700">{item.rate.ratePerMeterDisplay}</span>
-                      ) : item.variantId && clientId ? (
-                        <span className="text-red-500 text-xs">No rate</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                      {errors[`line_${idx}_rate`] && (
-                        <p className="text-xs text-red-600 mt-0.5">{errors[`line_${idx}_rate`]}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
-                      {calculateLineTotal(item)}
-                    </td>
                     <td className="px-3 py-2 text-center">
                       <button
                         type="button"
@@ -425,14 +388,6 @@ export function GatePassForm() {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Grand Total */}
-          <div className="mt-4 flex justify-end border-t pt-4">
-            <div className="text-right">
-              <span className="text-sm text-gray-600">Grand Total:</span>
-              <span className="ml-3 text-xl font-bold text-gray-900">{calculateGrandTotal()}</span>
-            </div>
           </div>
         </div>
 
@@ -454,7 +409,7 @@ export function GatePassForm() {
         onClose={() => setShowConfirm(false)}
         onConfirm={confirmSubmit}
         title="Confirm Gate Pass"
-        message={`Create gate pass for ${clients.find((c) => c.id === clientId)?.name ?? 'selected client'} with ${lineItems.filter((li) => li.variantId && li.meters > 0).length} item(s) totaling ${calculateGrandTotal()}? This will deduct stock and create a journal entry.`}
+        message={`Create gate pass for ${clients.find((c) => c.id === clientId)?.name ?? 'selected client'} with ${lineItems.filter((li) => li.variantId && li.meters > 0).length} line item(s)? This will deduct stock and create a journal entry.`}
         confirmLabel="Create"
         variant="warning"
         isLoading={createMutation.isPending}

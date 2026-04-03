@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Truck, Printer } from 'lucide-react';
+import { ArrowLeft, Truck, Package, Printer } from 'lucide-react';
 import { gatePassApi } from '../../services/gate-pass.api';
 import { LoadingSpinner, StatusBadge, ConfirmDialog } from '../../components/ui';
 
@@ -10,6 +10,7 @@ export function GatePassDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
+  const [showReceivedConfirm, setShowReceivedConfirm] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: result, isLoading, error } = useQuery({
@@ -60,6 +61,11 @@ export function GatePassDetail() {
     statusMutation.mutate({ status: 'DISPATCHED', version: gatePass.version });
   };
 
+  const handleMarkReceived = () => {
+    setShowReceivedConfirm(false);
+    statusMutation.mutate({ status: 'RECEIVED', version: gatePass.version });
+  };
+
   const handlePrint = () => {
     navigate(`/gate-pass/${id}/pdf`);
   };
@@ -96,6 +102,15 @@ export function GatePassDetail() {
               className="flex items-center gap-1 rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600 disabled:opacity-50"
             >
               <Truck size={16} /> Mark Dispatched
+            </button>
+          )}
+          {gatePass.status === 'DISPATCHED' && (
+            <button
+              onClick={() => setShowReceivedConfirm(true)}
+              disabled={statusMutation.isPending}
+              className="flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              <Package size={16} /> Mark Received
             </button>
           )}
           <button
@@ -156,10 +171,6 @@ export function GatePassDetail() {
               <dd className="font-medium">{gatePass.issuingManagerName}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-500">Total Amount</dt>
-              <dd className="font-bold text-lg">{gatePass.totalAmountDisplay}</dd>
-            </div>
-            <div className="flex justify-between">
               <dt className="text-gray-500">Payment Due</dt>
               <dd>
                 {new Date(gatePass.paymentDueDate + 'T00:00:00').toLocaleDateString('en-PK', {
@@ -206,8 +217,6 @@ export function GatePassDetail() {
                 <th className="px-4 py-3">#</th>
                 <th className="px-4 py-3">Variant</th>
                 <th className="px-4 py-3 text-right">Meters</th>
-                <th className="px-4 py-3 text-right">Rate/m</th>
-                <th className="px-4 py-3 text-right">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -219,15 +228,15 @@ export function GatePassDetail() {
                     <span className="ml-2 text-gray-500">{li.variant.name}</span>
                   </td>
                   <td className="px-4 py-3 text-right">{li.meters.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right">{li.ratePerMeterDisplay}</td>
-                  <td className="px-4 py-3 text-right font-medium">{li.lineAmountDisplay}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="border-t bg-gray-50">
               <tr>
-                <td colSpan={4} className="px-4 py-3 text-right font-semibold">Total</td>
-                <td className="px-4 py-3 text-right font-bold text-lg">{gatePass.totalAmountDisplay}</td>
+                <td colSpan={2} className="px-4 py-3 text-right font-semibold">Total Meters</td>
+                <td className="px-4 py-3 text-right font-bold text-lg">
+                  {gatePass.lineItems.reduce((sum, li) => sum + li.meters, 0).toLocaleString()}
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -279,6 +288,18 @@ export function GatePassDetail() {
         title="Mark as Dispatched"
         message={`Mark gate pass ${gatePass.gatePassNumber} as dispatched?`}
         confirmLabel="Dispatch"
+        variant="warning"
+        isLoading={statusMutation.isPending}
+      />
+
+      {/* Received Confirm Dialog */}
+      <ConfirmDialog
+        open={showReceivedConfirm}
+        onClose={() => setShowReceivedConfirm(false)}
+        onConfirm={handleMarkReceived}
+        title="Mark as Received"
+        message={`Confirm delivery received for gate pass ${gatePass.gatePassNumber}?`}
+        confirmLabel="Confirm Received"
         variant="warning"
         isLoading={statusMutation.isPending}
       />

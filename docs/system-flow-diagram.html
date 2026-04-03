@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZIP Production ERP — Full System Flow Diagram</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --card: #334155;
+    --border: #475569; --text: #e2e8f0; --muted: #94a3b8;
+    --blue: #3b82f6; --green: #22c55e; --red: #ef4444;
+    --yellow: #eab308; --purple: #a855f7; --cyan: #06b6d4;
+    --orange: #f97316; --pink: #ec4899; --indigo: #6366f1;
+    --teal: #14b8a6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height:1.5; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+  .header { text-align:center; margin-bottom:3rem; }
+  .header h1 { font-size:2.5rem; font-weight:800; background: linear-gradient(135deg, var(--blue), var(--cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .header p { color: var(--muted); font-size:1.1rem; margin-top:.5rem; }
+
+  .tabs { display:flex; flex-wrap:wrap; gap:.5rem; justify-content:center; margin-bottom:2rem; position:sticky; top:0; z-index:10; background:var(--bg); padding:1rem 0; }
+  .tab { padding:.6rem 1.2rem; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600; border:2px solid var(--border); background:var(--surface); color:var(--muted); transition:all .2s; }
+  .tab:hover { border-color:var(--blue); color:var(--text); }
+  .tab.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+  .section { display:none; animation: fadeIn .3s ease; }
+  .section.active { display:block; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+  .arch-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.5rem; margin:2rem 0; }
+  .arch-box { background:var(--surface); border:2px solid var(--border); border-radius:12px; padding:1.5rem; text-align:center; }
+  .arch-box h3 { font-size:1rem; margin-bottom:.5rem; }
+  .arch-box .tech { font-size:.8rem; color:var(--muted); }
+  .arch-box.frontend { border-color:var(--cyan); }
+  .arch-box.backend { border-color:var(--green); }
+  .arch-box.database { border-color:var(--purple); }
+
+  .flow { display:flex; flex-direction:column; gap:0; margin:1.5rem 0; }
+  .flow-step { display:flex; align-items:stretch; gap:1rem; }
+  .flow-node { background:var(--surface); border:2px solid var(--border); border-radius:10px; padding:1rem 1.2rem; flex:1; position:relative; margin-left:2rem; }
+  .flow-node::before { content:''; position:absolute; left:-1.55rem; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:var(--blue); border:3px solid var(--bg); }
+  .flow-node.trigger { border-color:var(--cyan); }
+  .flow-node.trigger::before { background:var(--cyan); }
+  .flow-node.process { border-color:var(--yellow); }
+  .flow-node.process::before { background:var(--yellow); }
+  .flow-node.effect { border-color:var(--green); }
+  .flow-node.effect::before { background:var(--green); }
+  .flow-node.error { border-color:var(--red); }
+  .flow-node.error::before { background:var(--red); }
+  .flow-node.decision { border-color:var(--purple); }
+  .flow-node.decision::before { background:var(--purple); }
+  .flow-node h4 { font-size:.9rem; font-weight:700; margin-bottom:.3rem; }
+  .flow-node p { font-size:.8rem; color:var(--muted); }
+  .flow-connector { display:flex; align-items:center; padding-left:2.35rem; }
+  .flow-connector .arrow { width:3px; height:24px; background:var(--border); }
+
+  .side-effects { background: rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.3); border-radius:10px; padding:1rem 1.2rem; margin-top:1rem; }
+  .side-effects h4 { color:var(--green); font-size:.85rem; margin-bottom:.5rem; }
+  .side-effects ul { list-style:none; font-size:.8rem; }
+  .side-effects li { padding:.2rem 0; padding-left:1.2rem; position:relative; color:var(--muted); }
+  .side-effects li::before { content:'⚡'; position:absolute; left:0; }
+
+  .matrix { width:100%; border-collapse:collapse; margin:1.5rem 0; font-size:.8rem; }
+  .matrix th, .matrix td { padding:.7rem .8rem; border:1px solid var(--border); text-align:center; }
+  .matrix th { background:var(--card); font-weight:700; position:sticky; top:60px; z-index:5; }
+  .matrix th:first-child, .matrix td:first-child { text-align:left; font-weight:600; background:var(--surface); position:sticky; left:0; z-index:4; }
+  .matrix th:first-child { z-index:6; }
+  .matrix .yes { color:var(--green); font-weight:700; }
+  .matrix .no { color:var(--border); }
+  .matrix .limited { color:var(--yellow); font-weight:600; }
+
+  .api-table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:.8rem; }
+  .api-table th, .api-table td { padding:.5rem .7rem; border:1px solid var(--border); text-align:left; }
+  .api-table th { background:var(--card); font-weight:700; }
+  .method { display:inline-block; padding:2px 8px; border-radius:4px; font-weight:700; font-size:.7rem; }
+  .method.get { background:rgba(34,197,94,.15); color:var(--green); }
+  .method.post { background:rgba(59,130,246,.15); color:var(--blue); }
+  .method.put { background:rgba(234,179,8,.15); color:var(--yellow); }
+  .method.patch { background:rgba(168,85,247,.15); color:var(--purple); }
+  .method.delete { background:rgba(239,68,68,.15); color:var(--red); }
+
+  .module-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; margin:1.5rem 0; }
+  .module-card { background:var(--surface); border:2px solid var(--border); border-radius:12px; padding:1.3rem; transition:all .2s; cursor:default; }
+  .module-card:hover { border-color:var(--blue); transform:translateY(-2px); }
+  .module-card .icon { font-size:1.5rem; margin-bottom:.5rem; }
+  .module-card h3 { font-size:1rem; margin-bottom:.3rem; }
+  .module-card p { font-size:.8rem; color:var(--muted); }
+  .module-card .routes { margin-top:.7rem; font-size:.75rem; color:var(--cyan); }
+
+  .je-diagram { display:grid; grid-template-columns:1fr auto 1fr; gap:1rem; align-items:center; margin:1rem 0; padding:1rem; background:var(--surface); border-radius:10px; border:1px solid var(--border); }
+  .je-account { padding:.8rem; border-radius:8px; text-align:center; }
+  .je-account.debit { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); }
+  .je-account.credit { background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); }
+  .je-account h5 { font-size:.85rem; }
+  .je-account p { font-size:.75rem; color:var(--muted); }
+  .je-arrow { font-size:1.5rem; color:var(--muted); text-align:center; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:1rem; margin:1.5rem 0; padding:1rem; background:var(--surface); border-radius:10px; }
+  .legend-item { display:flex; align-items:center; gap:.4rem; font-size:.8rem; }
+  .legend-dot { width:12px; height:12px; border-radius:50%; }
+
+  .section-title { font-size:1.5rem; font-weight:700; margin:2rem 0 1rem; padding-bottom:.5rem; border-bottom:2px solid var(--border); }
+  .section-subtitle { font-size:1.1rem; font-weight:600; margin:1.5rem 0 .5rem; color:var(--cyan); }
+
+  code { background:var(--card); padding:1px 6px; border-radius:4px; font-size:.8rem; }
+
+  @media (max-width:768px) {
+    .arch-grid { grid-template-columns:1fr; }
+    .module-grid { grid-template-columns:1fr; }
+    .je-diagram { grid-template-columns:1fr; }
+    .tabs { gap:.3rem; }
+    .tab { font-size:.75rem; padding:.4rem .8rem; }
+    .header h1 { font-size:1.5rem; }
+    .matrix { font-size:.65rem; }
+    .matrix th, .matrix td { padding:.4rem; }
+  }
+
+  @media print {
+    body { background:#fff; color:#000; }
+    .tabs { display:none; }
+    .section { display:block !important; page-break-inside:avoid; }
+    .flow-node { border-color:#999; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>🏭 ZIP Production ERP</h1>
+  <p>Complete System Flow Diagram — Zipper Factory Management System</p>
+  <p style="font-size:.8rem;color:var(--border);margin-top:.3rem;">Node.js + Express + Prisma 7 + PostgreSQL  |  React + TypeScript + Vite + TailwindCSS</p>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-section="overview">🏗️ Architecture</div>
+  <div class="tab" data-section="auth">🔐 Auth Flow</div>
+  <div class="tab" data-section="production">⚙️ Production</div>
+  <div class="tab" data-section="gatepass">🚛 Gate Pass</div>
+  <div class="tab" data-section="orders">📦 Orders</div>
+  <div class="tab" data-section="finance">💰 Finance</div>
+  <div class="tab" data-section="inventory">📊 Inventory</div>
+  <div class="tab" data-section="roles">👥 RBAC</div>
+  <div class="tab" data-section="apis">🔌 All APIs</div>
+  <div class="tab" data-section="journal">📒 Accounting</div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Architecture Overview -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section active" id="overview">
+  <h2 class="section-title">System Architecture</h2>
+
+  <div class="arch-grid">
+    <div class="arch-box frontend">
+      <div style="font-size:2rem">🖥️</div>
+      <h3 style="color:var(--cyan)">Frontend</h3>
+      <div class="tech">React 19 + TypeScript + Vite 8<br>TailwindCSS + React Query<br>React Router (lazy loaded)<br>Port: 5173 (dev)</div>
+    </div>
+    <div class="arch-box backend">
+      <div style="font-size:2rem">⚡</div>
+      <h3 style="color:var(--green)">Backend API</h3>
+      <div class="tech">Node.js + Express<br>Prisma 7 ORM + pg adapter<br>JWT + httpOnly cookies<br>Port: 3001</div>
+    </div>
+    <div class="arch-box database">
+      <div style="font-size:2rem">🗄️</div>
+      <h3 style="color:var(--purple)">Database</h3>
+      <div class="tech">PostgreSQL 18<br>20+ models (Prisma schema)<br>BigInt for all currency (paisa)<br>Soft deletes + versioning</div>
+    </div>
+  </div>
+
+  <h3 class="section-subtitle">System Modules</h3>
+  <div class="module-grid">
+    <div class="module-card" style="border-color:var(--orange)">
+      <div class="icon">⚙️</div>
+      <h3>Production</h3>
+      <p>Daily entries per plant/shift with raw material consumption tracking, electricity monitoring, scrap recording</p>
+      <div class="routes">11 endpoints · /production/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--cyan)">
+      <div class="icon">🚛</div>
+      <h3>Gate Pass</h3>
+      <p>Goods dispatch with auto stock deduction, journal entry, QR verification, order fulfillment tracking</p>
+      <div class="routes">10 endpoints · /gate-passes/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--blue)">
+      <div class="icon">📦</div>
+      <h3>Orders</h3>
+      <p>Client orders with variant/meters tracking, delivery deadlines, auto-fulfillment via gate passes</p>
+      <div class="routes">5 endpoints · /orders/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--green)">
+      <div class="icon">💰</div>
+      <h3>Finance</h3>
+      <p>Client ledgers, payment recording, voucher system with auto-approval, monthly reports</p>
+      <div class="routes">12 endpoints · /finance/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--purple)">
+      <div class="icon">📊</div>
+      <h3>Inventory</h3>
+      <p>Finished goods + raw materials stock, purchase recording, consumption reports, threshold alerts</p>
+      <div class="routes">7 endpoints · /inventory/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--yellow)">
+      <div class="icon">📈</div>
+      <h3>Dashboard</h3>
+      <p>KPIs, production trends, shift comparison, revenue, stock levels, overdue payments</p>
+      <div class="routes">8 endpoints · /dashboard/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--pink)">
+      <div class="icon">🛠️</div>
+      <h3>Settings</h3>
+      <p>Users, clients, variants, grain types, plants, machines, workers, expense categories, companies</p>
+      <div class="routes">28 endpoints · /settings/*</div>
+    </div>
+    <div class="module-card" style="border-color:var(--teal)">
+      <div class="icon">🔔</div>
+      <h3>Notifications</h3>
+      <p>In-app notifications for orders, voucher approvals, low stock, electricity discrepancies</p>
+      <div class="routes">4 endpoints · /notifications/*</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> User Action / Trigger</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Processing Step</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Side Effect / Result</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Validation / Error</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Decision Branch</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Auth Flow -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="auth">
+  <h2 class="section-title">🔐 Authentication Flow</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">Kiosk-mode login — no passwords. User selects their name from a list. JWT stored in httpOnly cookie.</p>
+
+  <h3 class="section-subtitle">Login Flow</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>1. User opens login page</h4><p>Frontend calls <code>GET /auth/users</code> (public) → shows list of 6 user tiles</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node trigger"><h4>2. User clicks their name</h4><p>Frontend calls <code>POST /auth/login { userId }</code> with the selected user's UUID</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node error"><h4>3. Backend validates</h4><p>Check: user exists? → user.isActive? → if NO → 401 UNAUTHORIZED</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>4. Generate JWT token</h4><p>Payload: <code>{ userId, role, name }</code> · Secret: JWT_SECRET · Expires: 24h</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>5. Set httpOnly cookie</h4><p>Name: <code>token</code> · HttpOnly · Secure (prod) · SameSite: Lax · MaxAge: 24h<br>Cookie auto-sent with every subsequent request via <code>withCredentials: true</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>6. Redirect to Dashboard</h4><p>React Router <code>navigate('/')</code> → ProtectedLayout renders based on role</p></div></div>
+  </div>
+
+  <h3 class="section-subtitle">Every Protected Request</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>Browser sends request</h4><p>Cookie <code>token=JWT</code> automatically included</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>authenticate middleware</h4><p>Extract token from <code>req.cookies.token</code> → verify JWT → attach <code>req.user = { userId, role, name }</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node decision"><h4>RBAC middleware</h4><p>Check <code>req.user.role ∈ allowedRoles[]</code> → if NO → 403 FORBIDDEN</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>Controller executes</h4><p>Business logic runs with <code>req.user</code> context for audit trail</p></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Production Flow -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="production">
+  <h2 class="section-title">⚙️ Production Entry Flow</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">Creating a production entry triggers raw material consumption, finished goods stock increase, and electricity monitoring.</p>
+
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /production/entries</h4><p>Input: plantId, shift (DAY/NIGHT), date, variantId, metersProduced, gramsPerMeter, electricityUnitsConsumed, workersPresent, scrapWeightKg</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node error"><h4>Validate uniqueness</h4><p>Check (plantId + shift + date) combination doesn't already exist → if duplicate → 409 CONFLICT</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Calculate raw material consumption</h4><p><code>gramsConsumed = gramsPerMeter × metersProduced</code><br><code>bagsConsumed = gramsConsumed ÷ grainType.bagWeightGrams</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node error"><h4>Check raw material stock</h4><p>If <code>rawMaterialStock.currentBags &lt; bagsConsumed</code> → THROW "INSUFFICIENT_RAW_MATERIAL"</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Deduct raw material stock</h4><p><code>rawMaterialStock.currentBags -= bagsConsumed</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Increase finished goods stock</h4><p><code>finishedGoodsStock.currentMeters += metersProduced</code> (upsert for variant)</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node decision"><h4>Check electricity discrepancy</h4><p>Compare actual vs expected (machine KWh × shift hours). If deviation > 15% → flag <code>hasElectricityDiscrepancy = true</code> → notify SUPER_ADMIN</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>Create production entry record</h4><p>Store all data + version=1 + create audit log</p></div></div>
+  </div>
+
+  <div class="side-effects">
+    <h4>Automated Side Effects</h4>
+    <ul>
+      <li>Raw material stock decremented (bags consumed)</li>
+      <li>Finished goods stock incremented (meters produced)</li>
+      <li>Low stock notification sent if below threshold</li>
+      <li>Electricity discrepancy flagged + notification if >15% deviation</li>
+      <li>Audit log entry created</li>
+    </ul>
+  </div>
+
+  <h3 class="section-subtitle">Scrap Sale Flow</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /production/scrap-sales</h4><p>Input: date, totalWeightKg, ratePerKgPaisa, buyerName, plantId</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Calculate total</h4><p><code>totalAmountPaisa = totalWeightKg × ratePerKgPaisa</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Create journal entry (auto-posted)</h4><p>DEBIT Cash · CREDIT Scrap Revenue</p></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Gate Pass Flow -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="gatepass">
+  <h2 class="section-title">🚛 Gate Pass Flow (Core Transaction)</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">The most complex transaction — dispatching goods. Creates ledger entries, deducts stock, updates orders, generates QR verification tokens.</p>
+
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /gate-passes</h4><p>Input: clientId, date, shift, lineItems[{variantId, meters}], vehicleNumber, driverName, orderId (optional)</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>🔒 Begin database transaction</h4><p>All following operations are atomic — either ALL succeed or ALL rollback</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node error"><h4>Validate each line item</h4><p>For each variant: check stock sufficiency → look up active client rate → if no rate found → THROW "RATE_NOT_FOUND"</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Calculate amounts</h4><p>Per line: <code>lineAmount = ratePerMeterPaisa × meters</code><br>Total: <code>totalAmountPaisa = Σ lineAmounts</code><br>Due date: <code>gatePassDate + client.paymentCycleDays</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Deduct finished goods stock</h4><p><code>finishedGoodsStock.currentMeters -= meters</code> for each variant line</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Create journal entry (auto-posted)</h4><p>DEBIT Accounts Receivable (client) → CREDIT Sales Revenue<br>Revenue recognized immediately on dispatch</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Generate gate pass #, QR verify token</h4><p>Sequential: GP-YYYY-NNNNN<br>Crypto-random 64-char hex token, expires in 48h</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node decision"><h4>If linked to order?</h4><p>YES → update <code>order.metersDelivered += totalMeters</code><br>If <code>metersDelivered ≥ metersOrdered</code> → set order status = COMPLETED</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>✅ Commit transaction + return gate pass</h4><p>GP number, line items, total amount, payment due date, verify token</p></div></div>
+  </div>
+
+  <div class="side-effects">
+    <h4>Automated Side Effects (all atomic)</h4>
+    <ul>
+      <li>Finished goods stock decremented per variant</li>
+      <li>Journal entry POSTED (AR debited, Revenue credited)</li>
+      <li>Payment due date calculated (client.paymentCycleDays from GP date)</li>
+      <li>Order fulfillment updated (if orderId linked)</li>
+      <li>QR verify token generated for physical verification</li>
+      <li>Audit log created</li>
+    </ul>
+  </div>
+
+  <h3 class="section-subtitle">Gate Pass Status Flow</h3>
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0;align-items:center;">
+    <div style="padding:.7rem 1.2rem;background:rgba(59,130,246,.15);border:1px solid var(--blue);border-radius:8px;font-weight:700;color:var(--blue)">CREATED</div>
+    <div style="font-size:1.3rem;color:var(--muted)">→</div>
+    <div style="padding:.7rem 1.2rem;background:rgba(234,179,8,.15);border:1px solid var(--yellow);border-radius:8px;font-weight:700;color:var(--yellow)">DISPATCHED</div>
+    <div style="font-size:1.3rem;color:var(--muted)">→</div>
+    <div style="padding:.7rem 1.2rem;background:rgba(34,197,94,.15);border:1px solid var(--green);border-radius:8px;font-weight:700;color:var(--green)">RECEIVED</div>
+    <div style="font-size:.8rem;color:var(--muted);margin-left:1rem">(QR scan verifies at client location)</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Orders -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="orders">
+  <h2 class="section-title">📦 Order Flow</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">Orders track client demand. NO journal entry at creation — revenue recognized only when gate pass issued (dispatch).</p>
+
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /orders</h4><p>Input: clientId, variantId, metersOrdered, ratePerMeterPaisa, deliveryDeadline</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Validate & calculate</h4><p>Client exists? Variant exists? Deadline in future?<br><code>totalAmountPaisa = metersOrdered × ratePerMeterPaisa</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Generate order # (ORD-YYYY-NNNNN)</h4><p>Status = PENDING, metersDelivered = 0</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Notify PRODUCTION_HEAD</h4><p>Notification includes: order #, client, variant, meters, deadline<br>⚠️ Financial data (rate, total) is EXCLUDED from notification</p></div></div>
+  </div>
+
+  <h3 class="section-subtitle">Order Fulfillment (via Gate Passes)</h3>
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0;align-items:center;">
+    <div style="padding:.7rem 1.2rem;background:rgba(59,130,246,.15);border:1px solid var(--blue);border-radius:8px;font-weight:700;color:var(--blue)">PENDING<br><span style="font-size:.7rem;font-weight:400">metersDelivered = 0</span></div>
+    <div style="font-size:1.3rem;color:var(--muted)">→</div>
+    <div style="padding:.7rem 1.2rem;background:rgba(234,179,8,.15);border:1px solid var(--yellow);border-radius:8px;font-weight:700;color:var(--yellow)">IN_PROGRESS<br><span style="font-size:.7rem;font-weight:400">partial deliveries</span></div>
+    <div style="font-size:1.3rem;color:var(--muted)">→</div>
+    <div style="padding:.7rem 1.2rem;background:rgba(34,197,94,.15);border:1px solid var(--green);border-radius:8px;font-weight:700;color:var(--green)">COMPLETED<br><span style="font-size:.7rem;font-weight:400">delivered ≥ ordered</span></div>
+  </div>
+  <p style="font-size:.85rem;color:var(--muted)">Each gate pass linked to an order auto-increments <code>metersDelivered</code>. When threshold met → status auto-updates to COMPLETED.</p>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Finance -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="finance">
+  <h2 class="section-title">💰 Finance Flows</h2>
+
+  <h3 class="section-subtitle">Payment Recording</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /finance/clients/:clientId/payments</h4><p>Input: amountPaisa, date, paymentMode (CASH/CHEQUE/BANK_TRANSFER), chequeNumber, notes</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Create journal entry (auto-posted)</h4><p>DEBIT Cash/Bank (1000) → CREDIT Accounts Receivable (client)<br>"Payment received from {clientName}"</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>Calculate new outstanding</h4><p><code>outstanding = Σ(client debits) - Σ(client credits)</code><br>Returned to frontend for display</p></div></div>
+  </div>
+
+  <h3 class="section-subtitle">Voucher Creation & Auto-Approval</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /finance/vouchers</h4><p>Input: title, amountPaisa, date, categoryId, companyId, paymentMode, chequeNumber</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node decision"><h4>Amount check: ≤ PKR 2,00,000?</h4>
+      <p style="color:var(--green)">✅ YES (≤ 20M paisa) → AUTO_APPROVED</p>
+      <p style="color:var(--red)">❌ NO (> 20M paisa) → PENDING → notify SUPER_ADMIN</p>
+    </div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>If auto-approved: ⚡ Create & POST journal entry immediately</h4><p>DEBIT Expense (5000) → CREDIT Cash/Bank (1000)</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>If pending: awaits SUPER_ADMIN action</h4><p><code>PATCH /finance/vouchers/:id/approve { action: "APPROVE" | "REJECT" }</code><br>APPROVE → creates JE and posts it · REJECT → no JE created</p></div></div>
+  </div>
+
+  <h3 class="section-subtitle">Client Ledger View</h3>
+  <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
+    <code>GET /finance/clients/:clientId/ledger</code> — Shows chronological debit/credit entries with running balance.
+    <br>Debits come from gate passes (goods dispatched to client), credits from payments received.
+    <br>Outstanding = totalDebits − totalCredits. Overdue = unpaid past due date.
+  </p>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Inventory -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="inventory">
+  <h2 class="section-title">📊 Inventory Flow</h2>
+
+  <h3 class="section-subtitle">Finished Goods Stock (Zipper Meters)</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0;">
+    <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:1rem;">
+      <h4 style="color:var(--green)">📈 Stock Increases When:</h4>
+      <ul style="font-size:.85rem;color:var(--muted);margin-top:.5rem;list-style:disc;padding-left:1.2rem;">
+        <li><strong>Production entry created</strong> — metersProduced added</li>
+      </ul>
+    </div>
+    <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:1rem;">
+      <h4 style="color:var(--red)">📉 Stock Decreases When:</h4>
+      <ul style="font-size:.85rem;color:var(--muted);margin-top:.5rem;list-style:disc;padding-left:1.2rem;">
+        <li><strong>Gate pass created</strong> — meters per line item deducted</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="section-subtitle">Raw Material Stock (Grain Bags)</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0;">
+    <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:1rem;">
+      <h4 style="color:var(--green)">📈 Stock Increases When:</h4>
+      <ul style="font-size:.85rem;color:var(--muted);margin-top:.5rem;list-style:disc;padding-left:1.2rem;">
+        <li><strong>Raw material purchase recorded</strong> — bags added</li>
+      </ul>
+    </div>
+    <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:1rem;">
+      <h4 style="color:var(--red)">📉 Stock Decreases When:</h4>
+      <ul style="font-size:.85rem;color:var(--muted);margin-top:.5rem;list-style:disc;padding-left:1.2rem;">
+        <li><strong>Production entry created</strong> — bags consumed (gramsPerMeter × meters ÷ bagWeightGrams)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="section-subtitle">Raw Material Purchase Flow</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-node trigger"><h4>POST /inventory/raw-materials/purchases</h4><p>Input: grainTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node process"><h4>Calculate total</h4><p><code>totalAmountPaisa = numberOfBags × ratePerBagPaisa</code></p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Create journal entry (auto-posted)</h4><p>DEBIT Raw Material Inventory (asset) → CREDIT Cash</p></div></div>
+    <div class="flow-connector"><div class="arrow"></div></div>
+    <div class="flow-step"><div class="flow-node effect"><h4>⚡ Increment raw material stock</h4><p><code>rawMaterialStock.currentBags += numberOfBags</code></p></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- RBAC -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="roles">
+  <h2 class="section-title">👥 Role-Based Access Control</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">5 roles matching the client's organizational structure. Each role sees only what they need.</p>
+
+  <div style="overflow-x:auto;">
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>Module / Feature</th>
+        <th style="color:var(--red)">SUPER_ADMIN<br>(Owner)</th>
+        <th style="color:var(--green)">FINANCE_HEAD</th>
+        <th style="color:var(--orange)">PRODUCTION_HEAD</th>
+        <th style="color:var(--cyan)">LOGISTICS_HEAD</th>
+        <th style="color:var(--pink)">MARKETING_HEAD</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Production Entries</td><td class="yes">✅ Full</td><td class="no">—</td><td class="yes">✅ Create/Read</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Scrap Sales</td><td class="yes">✅ Full</td><td class="no">—</td><td class="yes">✅ Create/Read</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Discrepancies</td><td class="yes">✅ Read</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Inventory (Read)</td><td class="yes">✅</td><td class="yes">✅</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td></tr>
+      <tr><td>Raw Material Purchase</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Gate Passes</td><td class="yes">✅ Full</td><td class="no">—</td><td class="no">—</td><td class="yes">✅ Create/Read</td><td class="no">—</td></tr>
+      <tr><td>Orders (Read)</td><td class="yes">✅</td><td class="yes">✅</td><td class="limited">⚠️ No financials</td><td class="no">—</td><td class="limited">⚠️ No financials</td></tr>
+      <tr><td>Orders (Create)</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Client Ledger</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Payments</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Vouchers</td><td class="yes">✅ + Approve</td><td class="yes">✅ Create/Read</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Monthly Reports</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>Dashboard KPIs</td><td class="yes">✅ All</td><td class="yes">✅ All</td><td class="limited">⚠️ No revenue</td><td class="limited">⚠️ No revenue</td><td class="limited">⚠️ No revenue</td></tr>
+      <tr><td>Settings (All)</td><td class="yes">✅ Full</td><td class="limited">⚠️ Clients only</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+      <tr><td>User Management</td><td class="yes">✅</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- All APIs -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="apis">
+  <h2 class="section-title">🔌 Complete API Reference (82+ endpoints)</h2>
+
+  <h3 class="section-subtitle">Auth (4)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th style="width:80px">Auth</th><th>Description</th></tr>
+    <tr><td><span class="method post">POST</span></td><td>/auth/login</td><td>Public</td><td>Kiosk login by userId</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/auth/users</td><td>Public</td><td>List active users for login screen</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/auth/logout</td><td>Protected</td><td>Clear auth cookie</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/auth/me</td><td>Protected</td><td>Get current user info</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Production (11)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/entries</td><td>List production entries (filters: plantId, shift, date, variantId)</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/production/entries</td><td>Create entry → stock update + consumption calc</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/entries/:id</td><td>Get entry details</td></tr>
+    <tr><td><span class="method put">PUT</span></td><td>/production/entries/:id</td><td>Update entry (SUPER_ADMIN, optimistic concurrency)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/dpr</td><td>Daily Progress Report</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/scrap-sales</td><td>List scrap sales</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/production/scrap-sales</td><td>Record scrap sale → journal entry</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/discrepancies</td><td>Electricity discrepancies</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/plants</td><td>Get plants (lookup)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/workers</td><td>Get workers by plant</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/production/variants</td><td>Get variants (lookup)</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Gate Pass (10)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method post">POST</span></td><td>/gate-passes/verify</td><td>QR token verification (public, 48h expiry)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes</td><td>List gate passes (filters: clientId, status, date, shift)</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/gate-passes</td><td>Create gate pass → stock deduct + JE + order update</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/:id</td><td>Get gate pass details</td></tr>
+    <tr><td><span class="method patch">PATCH</span></td><td>/gate-passes/:id/status</td><td>Update status (CREATED→DISPATCHED→RECEIVED)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/:id/pdf</td><td>Get PDF data for printing</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/clients</td><td>List clients (lookup)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/variants</td><td>List variants (lookup)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/clients/:clientId/orders</td><td>Client's open orders (lookup)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/gate-passes/client-rate</td><td>Rate for client-variant pair</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Orders (5)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/orders</td><td>List orders (filters: clientId, status, variantId, date)</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/orders</td><td>Create order → notify PRODUCTION_HEAD</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/orders/:id</td><td>Get order details</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/orders/by-client/:clientId</td><td>Client order history</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/orders/fulfillment-report</td><td>Fulfillment metrics</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Finance (12)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/clients</td><td>Clients with balances (outstanding, overdue days)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/clients/:id/ledger</td><td>Client ledger (debit/credit with running balance)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/clients/:id/ledger/download</td><td>Download ledger CSV/PDF</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/finance/clients/:id/payments</td><td>Record payment → journal entry</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/clients/:id/rates</td><td>Rate history for client</td></tr>
+    <tr><td><span class="method put">PUT</span></td><td>/finance/clients/:id/rates</td><td>Update client rate (archives old, sets new)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/overdue</td><td>All overdue payments</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/vouchers</td><td>List vouchers (filters: category, status, date)</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/finance/vouchers</td><td>Create voucher (auto-approve ≤ PKR 2L)</td></tr>
+    <tr><td><span class="method patch">PATCH</span></td><td>/finance/vouchers/:id/approve</td><td>Approve/reject voucher (SUPER_ADMIN only)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/finance/reports/monthly</td><td>Monthly financial report (inflow/outflow)</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Inventory (7)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/inventory/finished-goods</td><td>Finished goods stock levels per variant</td></tr>
+    <tr><td><span class="method put">PUT</span></td><td>/inventory/finished-goods/:id/threshold</td><td>Update low-stock threshold</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/inventory/raw-materials</td><td>Raw material stock by grain type</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/inventory/raw-materials/purchases</td><td>Purchase history</td></tr>
+    <tr><td><span class="method post">POST</span></td><td>/inventory/raw-materials/purchases</td><td>Record purchase → stock increment + journal entry</td></tr>
+    <tr><td><span class="method put">PUT</span></td><td>/inventory/raw-materials/:id/threshold</td><td>Update low-stock threshold</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/inventory/consumption-report</td><td>Raw material consumption report</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Dashboard (8)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/kpis</td><td>Key performance indicators (production, revenue, stock)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/production-trends</td><td>Production trends over time</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/shift-comparison</td><td>Day vs night shift comparison</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/revenue</td><td>Revenue breakdown</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/stock-levels</td><td>Current stock summary</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/overdue-summary</td><td>Overdue payments summary</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/recent-activity</td><td>Recent system activity feed</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/dashboard/variant-breakdown</td><td>Production by variant</td></tr>
+  </table>
+
+  <h3 class="section-subtitle">Settings (28) · Notifications (4)</h3>
+  <table class="api-table">
+    <tr><th style="width:80px">Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/users · POST · PUT /:id · DELETE /:id</td><td>User CRUD (SUPER_ADMIN only)</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/clients · POST · PUT /:id · DELETE /:id</td><td>Client CRUD</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/variants · POST · PUT /:id · DELETE /:id</td><td>Variant CRUD</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/grain-types · POST · PUT /:id · DELETE /:id</td><td>Grain type CRUD</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/plants · machines · workers</td><td>Plant/machine/worker CRUD</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/settings/expense-categories · companies · system</td><td>Category/company/system CRUD</td></tr>
+    <tr><td colspan="3" style="border-top:2px solid var(--border)"></td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/notifications</td><td>List notifications (paginated)</td></tr>
+    <tr><td><span class="method patch">PATCH</span></td><td>/notifications/:id/read</td><td>Mark notification as read</td></tr>
+    <tr><td><span class="method patch">PATCH</span></td><td>/notifications/read-all</td><td>Mark all as read</td></tr>
+    <tr><td><span class="method get">GET</span></td><td>/notifications/unread-count</td><td>Unread notification count</td></tr>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- Journal Entries -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section" id="journal">
+  <h2 class="section-title">📒 Double-Entry Accounting</h2>
+  <p style="color:var(--muted);margin-bottom:1rem;">Every financial transaction creates a balanced journal entry (debits = credits). All auto-posted.</p>
+
+  <h3 class="section-subtitle">Gate Pass → Revenue Recognition</h3>
+  <div class="je-diagram">
+    <div class="je-account debit"><h5 style="color:var(--red)">DEBIT</h5><p>Accounts Receivable (1200)</p><p>Client sub-ledger</p></div>
+    <div class="je-arrow">⟷</div>
+    <div class="je-account credit"><h5 style="color:var(--green)">CREDIT</h5><p>Sales Revenue (4100)</p><p>Income statement</p></div>
+  </div>
+
+  <h3 class="section-subtitle">Payment Received → AR Reduction</h3>
+  <div class="je-diagram">
+    <div class="je-account debit"><h5 style="color:var(--red)">DEBIT</h5><p>Cash / Bank (1000)</p><p>Asset increase</p></div>
+    <div class="je-arrow">⟷</div>
+    <div class="je-account credit"><h5 style="color:var(--green)">CREDIT</h5><p>Accounts Receivable</p><p>Client sub-ledger</p></div>
+  </div>
+
+  <h3 class="section-subtitle">Voucher (Expense) → Cash Outflow</h3>
+  <div class="je-diagram">
+    <div class="je-account debit"><h5 style="color:var(--red)">DEBIT</h5><p>Expense (5000)</p><p>Income statement</p></div>
+    <div class="je-arrow">⟷</div>
+    <div class="je-account credit"><h5 style="color:var(--green)">CREDIT</h5><p>Cash / Bank (1000)</p><p>Asset decrease</p></div>
+  </div>
+
+  <h3 class="section-subtitle">Raw Material Purchase → Inventory Asset</h3>
+  <div class="je-diagram">
+    <div class="je-account debit"><h5 style="color:var(--red)">DEBIT</h5><p>Raw Material Inventory (1200)</p><p>Asset increase</p></div>
+    <div class="je-arrow">⟷</div>
+    <div class="je-account credit"><h5 style="color:var(--green)">CREDIT</h5><p>Cash (1000)</p><p>Asset decrease</p></div>
+  </div>
+
+  <h3 class="section-subtitle">Scrap Sale → Other Income</h3>
+  <div class="je-diagram">
+    <div class="je-account debit"><h5 style="color:var(--red)">DEBIT</h5><p>Cash (1000)</p><p>Asset increase</p></div>
+    <div class="je-arrow">⟷</div>
+    <div class="je-account credit"><h5 style="color:var(--green)">CREDIT</h5><p>Scrap Revenue</p><p>Other income</p></div>
+  </div>
+
+  <h3 class="section-subtitle">Summary: What Creates Journal Entries</h3>
+  <table class="api-table">
+    <tr><th>Event</th><th>Debit</th><th>Credit</th><th>Trigger</th><th>Status</th></tr>
+    <tr><td>Gate Pass Created</td><td>AR (client)</td><td>Sales Revenue</td><td>Automatic</td><td>AUTO-POSTED</td></tr>
+    <tr><td>Payment Recorded</td><td>Cash/Bank</td><td>AR (client)</td><td>Automatic</td><td>AUTO-POSTED</td></tr>
+    <tr><td>Voucher ≤ PKR 2L</td><td>Expense</td><td>Cash/Bank</td><td>Auto-approved</td><td>AUTO-POSTED</td></tr>
+    <tr><td>Voucher > PKR 2L (approved)</td><td>Expense</td><td>Cash/Bank</td><td>SUPER_ADMIN approval</td><td>POSTED on approve</td></tr>
+    <tr><td>Raw Material Purchase</td><td>RM Inventory</td><td>Cash</td><td>Automatic</td><td>AUTO-POSTED</td></tr>
+    <tr><td>Scrap Sale</td><td>Cash</td><td>Scrap Revenue</td><td>Automatic</td><td>AUTO-POSTED</td></tr>
+  </table>
+
+  <p style="font-size:.85rem;color:var(--muted);margin-top:1rem;">
+    <strong>Currency:</strong> All amounts stored as BigInt paisa (1 PKR = 100 paisa). Displayed with South Asian grouping: "PKR 1,23,456.00"<br>
+    <strong>Sequence:</strong> Journal entry numbers generated via <code>generateSequenceNumber('JE', 'journalEntry')</code> → JE-YYYY-NNNNN
+  </p>
+</div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.section).classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+</script>
+</body>
+</html>

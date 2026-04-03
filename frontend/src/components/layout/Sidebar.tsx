@@ -41,6 +41,28 @@ const navItems: NavItem[] = [
     path: '/inventory',
     icon: <Package size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD],
+    children: [
+      {
+        label: 'Raw Materials',
+        path: '/inventory/raw-materials',
+        roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD],
+      },
+      {
+        label: 'Finished Goods',
+        path: '/inventory/finished-goods',
+        roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD],
+      },
+      {
+        label: 'Purchases',
+        path: '/inventory/purchases',
+        roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+      },
+      {
+        label: 'Consumption Report',
+        path: '/inventory/consumption-report',
+        roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD],
+      },
+    ],
   },
   {
     label: 'Gate Pass',

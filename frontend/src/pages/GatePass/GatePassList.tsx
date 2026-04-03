@@ -100,23 +100,6 @@ export function GatePassList() {
         </span>
       ),
     },
-    {
-      key: 'totalAmountDisplay',
-      header: 'Amount',
-      hideOnMobile: true,
-      render: (row) => (
-        <span className="font-medium">{row.totalAmountDisplay || '—'}</span>
-      ),
-    },
-    {
-      key: 'paymentDueDate',
-      header: 'Payment Due',
-      hideOnMobile: true,
-      render: (row) => {
-        const d = new Date(row.paymentDueDate + 'T00:00:00');
-        return d.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
-      },
-    },
   ];
 
   const mobileCard = (row: GatePass) => (
@@ -133,7 +116,6 @@ export function GatePassList() {
       <div className="text-xs text-gray-600">
         {row.lineItems.map((li) => `${li.variant.code} (${li.meters}m)`).join(', ')}
       </div>
-      <div className="text-sm font-medium">{row.totalAmountDisplay || '—'}</div>
     </div>
   );
 

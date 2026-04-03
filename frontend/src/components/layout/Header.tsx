@@ -1,4 +1,5 @@
-import { Menu, Bell } from 'lucide-react';
+import { Menu, Bell, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 
@@ -7,8 +8,14 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuToggle }: HeaderProps) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { unreadCount } = useNotifications();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   const roleBadgeColor: Record<string, string> = {
     SUPER_ADMIN: 'bg-purple-100 text-purple-800',
@@ -65,6 +72,14 @@ export function Header({ onMenuToggle }: HeaderProps) {
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
               {user.name.charAt(0).toUpperCase()}
             </div>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+              aria-label="Logout"
+              title="Logout"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         )}
       </div>
