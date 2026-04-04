@@ -6,6 +6,7 @@ import {
   Layers,
   Factory,
   Settings,
+  Briefcase,
 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 
@@ -30,6 +31,13 @@ const cards: SettingsCard[] = [
     description: 'Manage clients and their payment rates',
     icon: <Building2 size={24} />,
     path: '/settings/clients',
+  },
+  {
+    title: 'Companies',
+    description: 'Manage companies used for voucher cheque accounts',
+    icon: <Briefcase size={24} />,
+    path: '/settings/companies',
+    adminOnly: true,
   },
   {
     title: 'Expense Categories',

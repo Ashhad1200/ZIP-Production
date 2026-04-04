@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Document, Page, Text, View, StyleSheet, PDFViewer } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, PDFViewer, Image } from '@react-pdf/renderer';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useRef, useEffect, useState } from 'react';
 import { gatePassApi, type GatePassDetail as GatePassDetailType } from '../../services/gate-pass.api';
@@ -225,8 +225,12 @@ function GatePassPDFDocument({
             <Text style={{ marginTop: 8, color: '#666' }}>Status: {gatePass.status}</Text>
           </View>
           <View style={styles.qrContainer}>
-            {/* eslint-disable-next-line jsx-a11y/alt-text */}
-            {qrDataUrl && <Text style={{ fontSize: 8, color: '#999', marginTop: 4 }}>Scan to verify</Text>}
+            {qrDataUrl && (
+              <>
+                <Image src={qrDataUrl} style={{ width: 80, height: 80 }} />
+                <Text style={{ fontSize: 7, color: '#999', marginTop: 3, textAlign: 'center' }}>Scan to verify delivery</Text>
+              </>
+            )}
           </View>
         </View>
       </Page>

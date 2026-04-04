@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { UserManagement } from './UserManagement';
+import { CompanyManagement } from './CompanyManagement';
 import { ClientManagement } from './ClientManagement';
 import { ExpenseCategories } from './ExpenseCategories';
 import { VariantGrainManagement } from './VariantGrainManagement';
@@ -12,6 +13,7 @@ export default function SettingsPage() {
     <Routes>
       <Route index element={<SettingsOverview />} />
       <Route path="users" element={<UserManagement />} />
+      <Route path="companies" element={<CompanyManagement />} />
       <Route path="clients" element={<ClientManagement />} />
       <Route path="expense-categories" element={<ExpenseCategories />} />
       <Route path="variants" element={<VariantGrainManagement />} />
