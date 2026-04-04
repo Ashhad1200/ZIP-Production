@@ -16,12 +16,14 @@ export const ROLES = {
   PRODUCTION_HEAD: 'PRODUCTION_HEAD',
   LOGISTICS_HEAD: 'LOGISTICS_HEAD',
   MARKETING_HEAD: 'MARKETING_HEAD',
+  HR_HEAD: 'HR_HEAD',
 } as const;
 
 export const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   CREATED: { bg: 'bg-blue-100', text: 'text-blue-800' },
   DISPATCHED: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
   RECEIVED: { bg: 'bg-green-100', text: 'text-green-800' },
+  PENDING_APPROVAL: { bg: 'bg-amber-100', text: 'text-amber-800' },
   PENDING: { bg: 'bg-orange-100', text: 'text-orange-800' },
   ONGOING: { bg: 'bg-indigo-100', text: 'text-indigo-800' },
   COMPLETED: { bg: 'bg-green-100', text: 'text-green-800' },

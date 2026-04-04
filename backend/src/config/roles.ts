@@ -3,8 +3,8 @@ import { Role } from '@prisma/client';
 // Defines which roles can access which module endpoints
 export const ROLE_PERMISSIONS: Record<string, Role[]> = {
   // Auth - public for kiosk, me requires auth
-  'auth:users': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD],
-  'auth:me': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD],
+  'auth:users': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD, Role.HR_HEAD],
+  'auth:me': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD, Role.HR_HEAD],
   
   // Production
   'production:read': [Role.SUPER_ADMIN, Role.PRODUCTION_HEAD],
@@ -24,14 +24,19 @@ export const ROLE_PERMISSIONS: Record<string, Role[]> = {
   // Orders
   'orders:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.MARKETING_HEAD],
   'orders:write': [Role.SUPER_ADMIN, Role.FINANCE_HEAD],
+  'orders:approve': [Role.SUPER_ADMIN, Role.FINANCE_HEAD],
   
   // Finance
   'finance:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD],
   'finance:write': [Role.SUPER_ADMIN, Role.FINANCE_HEAD],
   'finance:approve': [Role.SUPER_ADMIN],
   
+  // HR
+  'hr:read': [Role.SUPER_ADMIN, Role.HR_HEAD, Role.FINANCE_HEAD],
+  'hr:write': [Role.SUPER_ADMIN, Role.HR_HEAD],
+  
   // Dashboard
-  'dashboard:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD],
+  'dashboard:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD, Role.HR_HEAD],
   
   // Settings
   'settings:read': [Role.SUPER_ADMIN],
@@ -39,11 +44,12 @@ export const ROLE_PERMISSIONS: Record<string, Role[]> = {
   'settings:clients': [Role.SUPER_ADMIN, Role.FINANCE_HEAD],
   
   // Notifications
-  'notifications:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD],
+  'notifications:read': [Role.SUPER_ADMIN, Role.FINANCE_HEAD, Role.PRODUCTION_HEAD, Role.LOGISTICS_HEAD, Role.MARKETING_HEAD, Role.HR_HEAD],
 };
 
 // Roles that should NOT see financial fields in API responses
 export const FINANCIAL_FIELD_RESTRICTED_ROLES: Role[] = [
   Role.PRODUCTION_HEAD,
   Role.MARKETING_HEAD,
+  Role.HR_HEAD,
 ];

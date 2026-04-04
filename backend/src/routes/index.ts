@@ -7,6 +7,7 @@ import orderRoutes from './order.routes';
 import financeRoutes from './finance.routes';
 import settingsRoutes from './settings.routes';
 import dashboardRoutes from './dashboard.routes';
+import hrRoutes from './hr.routes';
 import { authenticate } from '../middleware/auth.middleware';
 import { notificationService } from '../services/notification.service';
 import { AuthenticatedRequest } from '../types';
@@ -36,6 +37,9 @@ router.use('/settings', settingsRoutes);
 
 // Dashboard routes (all protected via route-level middleware)
 router.use('/dashboard', dashboardRoutes);
+
+// HR routes (all protected via route-level middleware)
+router.use('/hr', hrRoutes);
 
 // Notification routes (all protected)
 router.get('/notifications', authenticate, async (req: AuthenticatedRequest, res, next) => {

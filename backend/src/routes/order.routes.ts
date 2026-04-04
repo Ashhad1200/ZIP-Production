@@ -17,5 +17,7 @@ router.get('/by-client/:clientId', authenticate, rbac(...readRoles), orderContro
 router.get('/', authenticate, rbac(...readRoles), orderController.listOrders.bind(orderController));
 router.post('/', authenticate, rbac(...writeRoles), orderController.createOrder.bind(orderController));
 router.get('/:id', authenticate, rbac(...readRoles), orderController.getOrderById.bind(orderController));
+router.post('/:id/approve', authenticate, rbac(...writeRoles), orderController.approveOrder.bind(orderController));
+router.post('/:id/reject', authenticate, rbac(...writeRoles), orderController.rejectOrder.bind(orderController));
 
 export default router;

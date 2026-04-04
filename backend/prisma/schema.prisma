@@ -16,6 +16,7 @@ enum Role {
   PRODUCTION_HEAD
   LOGISTICS_HEAD
   MARKETING_HEAD
+  HR_HEAD
 }
 
 enum Shift {
@@ -30,6 +31,7 @@ enum GatePassStatus {
 }
 
 enum OrderStatus {
+  PENDING_APPROVAL
   PENDING
   ONGOING
   COMPLETED
@@ -180,6 +182,9 @@ model Worker {
 
   plant             Plant?                  @relation(fields: [plantId], references: [id])
   productionEntries ProductionEntryWorker[]
+  salaryRates       WorkerSalaryRate[]
+  payrollRecords    PayrollRecord[]
+  advances          WorkerAdvance[]
 
   @@index([plantId])
   @@index([isDeleted])
@@ -617,6 +622,7 @@ model JournalEntry {
   voucher             Voucher?
   scrapSale           ScrapSale?
   rawMaterialPurchase RawMaterialPurchase?
+  payrollRecord       PayrollRecord?
 
   @@index([entryDate])
   @@index([status])
@@ -795,4 +801,69 @@ model SystemSetting {
   description String?
 
   @@map("system_settings")
+}
+
+// ─── 27. WorkerSalaryRate ────────────────────────────────────────────────────
+
+model WorkerSalaryRate {
+  id                  String   @id @default(uuid())
+  workerId            String
+  monthlySalaryPaisa  BigInt
+  effectiveFrom       DateTime
+  isActive            Boolean  @default(true)
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  worker Worker @relation(fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@map("worker_salary_rates")
+}
+
+// ─── 28. WorkerAdvance ───────────────────────────────────────────────────────
+
+model WorkerAdvance {
+  id          String   @id @default(uuid())
+  workerId    String
+  amountPaisa BigInt
+  date        DateTime
+  reason      String?
+  isRecovered Boolean  @default(false)
+  recoveredAt DateTime?
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  worker Worker @relation(fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@map("worker_advances")
+}
+
+// ─── 29. PayrollRecord ───────────────────────────────────────────────────────
+
+model PayrollRecord {
+  id                    String      @id @default(uuid())
+  month                 Int
+  year                  Int
+  workerId              String
+  grossSalaryPaisa      BigInt
+  advanceDeductionPaisa BigInt      @default(0)
+  deductionsPaisa       BigInt      @default(0)
+  netSalaryPaisa        BigInt
+  paymentMode           PaymentMode @default(CASH)
+  chequeNumber          String?
+  journalEntryId        String?     @unique
+  notes                 String?
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  worker       Worker        @relation(fields: [workerId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@unique([workerId, month, year])
+  @@index([year, month])
+  @@map("payroll_records")
 }

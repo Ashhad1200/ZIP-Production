@@ -23,7 +23,7 @@ export interface Order {
   metersDelivered: number;
   fulfillmentPercent: number;
   deliveryDeadline: string;
-  status: 'PENDING' | 'ONGOING' | 'COMPLETED';
+  status: 'PENDING_APPROVAL' | 'PENDING' | 'ONGOING' | 'COMPLETED';
   isOverdue: boolean;
   // Financial fields (only for FINANCE_HEAD/SUPER_ADMIN)
   ratePerMeterPaisa?: number;
@@ -139,6 +139,12 @@ export const orderApi = {
     api
       .get<{ data: FulfillmentReport }>('/orders/fulfillment-report')
       .then((r) => r.data),
+
+  approveOrder: (id: string) =>
+    api.post<{ data: { id: string; status: string; version: number } }>(`/orders/${id}/approve`).then((r) => r.data),
+
+  rejectOrder: (id: string, reason?: string) =>
+    api.post<{ data: { id: string; status: string; reason: string } }>(`/orders/${id}/reject`, { reason }).then((r) => r.data),
 
   // Reuse gate-pass lookups for clients and variants
   getClients: () =>

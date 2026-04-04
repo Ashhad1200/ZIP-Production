@@ -38,6 +38,7 @@ const ReportsPage = React.lazy(() => import('./pages/Finance/ReportsPage'));
 const SettingsPage = React.lazy(
   () => import('./pages/Settings/SettingsPage'),
 );
+const HRPage = React.lazy(() => import('./pages/HR/HRPage'));
 const VerifyPage = React.lazy(() => import('./pages/Verify/VerifyPage'));
 const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
 
@@ -185,6 +186,14 @@ export const routes: RouteObject[] = [
           { path: 'vouchers/*', element: <Lazy element={VouchersPage} /> },
           { path: 'reports', element: <Lazy element={ReportsPage} /> },
         ],
+      },
+      {
+        path: 'hr/*',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.HR_HEAD]}>
+            <Lazy element={HRPage} />
+          </RoleGuard>
+        ),
       },
       {
         path: 'settings/*',

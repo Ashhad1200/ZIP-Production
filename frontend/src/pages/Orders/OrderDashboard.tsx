@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
   Package,
@@ -8,6 +8,8 @@ import {
   PlayCircle,
   CheckCircle2,
   AlertTriangle,
+  ShieldCheck,
+  ShieldX,
 } from 'lucide-react';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { KPICard } from '../../components/ui/KPICard';
@@ -38,6 +40,32 @@ export function OrderDashboard() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => orderApi.approveOrder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['fulfillment-report'] });
+      showToast('success', 'Order approved and sent to production');
+    },
+    onError: () => showToast('error', 'Failed to approve order'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => orderApi.rejectOrder(id, 'Rejected by finance'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['fulfillment-report'] });
+      showToast('success', 'Order rejected');
+    },
+    onError: () => showToast('error', 'Failed to reject order'),
+  });
 
   // ── Fulfillment report for KPIs ─────────────────────────────────────────
   const { data: reportResp } = useQuery({
@@ -159,6 +187,30 @@ export function OrderDashboard() {
         </div>
       ),
     },
+    ...(canViewFinance() ? [{
+      key: 'actions' as keyof Order,
+      header: '',
+      render: (row: Order) => row.status === 'PENDING_APPROVAL' ? (
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => approveMutation.mutate(row.id)}
+            disabled={approveMutation.isPending || rejectMutation.isPending}
+            title="Approve"
+            className="flex items-center gap-1 rounded-lg bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+          >
+            <ShieldCheck size={13} /> Approve
+          </button>
+          <button
+            onClick={() => rejectMutation.mutate(row.id)}
+            disabled={approveMutation.isPending || rejectMutation.isPending}
+            title="Reject"
+            className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            <ShieldX size={13} /> Reject
+          </button>
+        </div>
+      ) : null,
+    }] : []),
   ];
 
   // ── Mobile card ─────────────────────────────────────────────────────────
@@ -205,6 +257,13 @@ export function OrderDashboard() {
 
   return (
     <div>
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm text-white shadow-lg ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          {toast.message}
+        </div>
+      )}
       {/* Header */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -283,6 +342,7 @@ export function OrderDashboard() {
         <SearchableSelect
           options={[
             { value: '', label: 'All Statuses' },
+            { value: 'PENDING_APPROVAL', label: 'Awaiting Approval' },
             { value: 'PENDING', label: 'Pending' },
             { value: 'ONGOING', label: 'Ongoing' },
             { value: 'COMPLETED', label: 'Completed' },

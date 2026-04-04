@@ -11,11 +11,16 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     text: 'text-gray-800',
   };
 
+  const label =
+    status === 'PENDING_APPROVAL'
+      ? 'Awaiting Approval'
+      : status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors.bg} ${colors.text} ${className}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()}
+      {label}
     </span>
   );
 }

@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  UserCheck,
 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 import { ROLES } from '../../utils/constants';
@@ -98,6 +99,12 @@ const navItems: NavItem[] = [
         roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
       },
     ],
+  },
+  {
+    label: 'HR & Payroll',
+    path: '/hr',
+    icon: <UserCheck size={20} />,
+    roles: [ROLES.SUPER_ADMIN, ROLES.HR_HEAD],
   },
   {
     label: 'Settings',

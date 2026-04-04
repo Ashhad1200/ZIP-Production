@@ -91,7 +91,7 @@ export class OrderService {
     // 6. Generate order number
     const orderNumber = await generateSequenceNumber('ORD', 'order');
 
-    // 7. Create order
+    // 7. Create order — starts as PENDING_APPROVAL (finance must approve)
     const order = await prisma.order.create({
       data: {
         orderNumber,
@@ -101,7 +101,7 @@ export class OrderService {
         ratePerMeterPaisa: BigInt(input.ratePerMeterPaisa),
         totalAmountPaisa,
         deliveryDeadline: deadline,
-        status: OrderStatus.PENDING,
+        status: OrderStatus.PENDING_APPROVAL,
         createdBy: userId,
       },
     });
@@ -109,12 +109,12 @@ export class OrderService {
     // 8. Calculate client outstanding
     const clientOutstandingPaisa = await this.getClientOutstanding(input.clientId);
 
-    // 9. Send notification to PRODUCTION_HEAD (no financial details)
+    // 9. Notify FINANCE_HEAD to approve (not production yet)
     await notificationService.notifyRole({
-      recipientRole: Role.PRODUCTION_HEAD,
+      recipientRole: Role.FINANCE_HEAD,
       type: NotificationType.ORDER_CREATED,
-      title: 'New Order Received',
-      message: `Order ${orderNumber}: ${client.name} ordered ${input.metersOrdered}m of ${variant.name}. Deadline: ${formatDatePKT(deadline)}. No financial details — contact Finance Head.`,
+      title: 'New Order Awaiting Approval',
+      message: `Order ${orderNumber}: ${client.name} ordered ${input.metersOrdered}m of ${variant.name}. Deadline: ${formatDatePKT(deadline)}. Please review and approve.`,
       referenceType: 'Order',
       referenceId: order.id,
     });
@@ -160,8 +160,20 @@ export class OrderService {
 
     const where: Prisma.OrderWhereInput = { isDeleted: false };
 
+    // Role-based filter: PRODUCTION_HEAD cannot see PENDING_APPROVAL orders
+    if (userRole === Role.PRODUCTION_HEAD) {
+      if (params.status === OrderStatus.PENDING_APPROVAL) {
+        // Return empty for production trying to view approval queue
+        return { data: [], meta: { page: 1, limit, total: 0, totalPages: 0 } };
+      }
+      where.status = params.status
+        ? params.status
+        : { not: OrderStatus.PENDING_APPROVAL };
+    } else if (params.status) {
+      where.status = params.status;
+    }
+
     if (params.clientId) where.clientId = params.clientId;
-    if (params.status) where.status = params.status;
     if (params.variantId) where.variantId = params.variantId;
 
     if (params.dateFrom || params.dateTo) {
@@ -374,6 +386,56 @@ export class OrderService {
       },
       orders: mapped,
     };
+  }
+
+  /**
+   * Approve a PENDING_APPROVAL order — moves it to PENDING and notifies production.
+   */
+  async approveOrder(id: string, userId: string) {
+    const order = await prisma.order.findUnique({
+      where: { id, isDeleted: false },
+      include: { client: true, variant: true },
+    });
+    if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+    if (order.status !== OrderStatus.PENDING_APPROVAL) {
+      throw Object.assign(new Error('Only PENDING_APPROVAL orders can be approved'), { statusCode: 422 });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status: OrderStatus.PENDING, updatedBy: userId, version: { increment: 1 } },
+    });
+
+    await notificationService.notifyRole({
+      recipientRole: Role.PRODUCTION_HEAD,
+      type: NotificationType.ORDER_CREATED,
+      title: 'Order Approved — Ready for Production',
+      message: `Order ${order.orderNumber}: ${order.client.name} ordered ${order.metersOrdered}m of ${order.variant.name}. Deadline: ${formatDatePKT(order.deliveryDeadline)}.`,
+      referenceType: 'Order',
+      referenceId: order.id,
+    });
+
+    await auditService.log({ entityType: 'Order', entityId: id, action: AuditAction.UPDATE, newValue: { status: 'PENDING' }, userId });
+    return { id: updated.id, status: updated.status, version: updated.version };
+  }
+
+  /**
+   * Reject a PENDING_APPROVAL order — marks it COMPLETED (as cancelled equivalent).
+   */
+  async rejectOrder(id: string, reason: string, userId: string) {
+    const order = await prisma.order.findUnique({ where: { id, isDeleted: false } });
+    if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+    if (order.status !== OrderStatus.PENDING_APPROVAL) {
+      throw Object.assign(new Error('Only PENDING_APPROVAL orders can be rejected'), { statusCode: 422 });
+    }
+
+    await prisma.order.update({
+      where: { id },
+      data: { isDeleted: true, deletedAt: new Date(), deletedBy: userId },
+    });
+
+    await auditService.log({ entityType: 'Order', entityId: id, action: AuditAction.SOFT_DELETE, newValue: { reason }, userId });
+    return { id, status: 'REJECTED', reason };
   }
 
   // ─── Helper ──────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export function useRole() {
   const canViewGatePass = () => hasRole('SUPER_ADMIN', 'LOGISTICS_HEAD');
   const canViewOrders = () =>
     hasRole('SUPER_ADMIN', 'FINANCE_HEAD', 'PRODUCTION_HEAD', 'MARKETING_HEAD');
+  const canViewHR = () => hasRole('SUPER_ADMIN', 'HR_HEAD');
 
   return {
     hasRole,
@@ -25,6 +26,7 @@ export function useRole() {
     canViewInventory,
     canViewGatePass,
     canViewOrders,
+    canViewHR,
     role: user?.role,
   };
 }

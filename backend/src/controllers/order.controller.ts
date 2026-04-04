@@ -79,6 +79,24 @@ export class OrderController {
       next(error);
     }
   }
+  async approveOrder(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await orderService.approveOrder(req.params.id as string, req.user!.userId);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async rejectOrder(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { reason } = req.body as { reason?: string };
+      const result = await orderService.rejectOrder(req.params.id as string, reason || 'No reason provided', req.user!.userId);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const orderController = new OrderController();
