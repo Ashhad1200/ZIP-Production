@@ -68,29 +68,29 @@ export interface CreatePayrollPayload {
 
 export const hrApi = {
   // Workers & salary rates
-  listWorkers: (): Promise<{ data: WorkerSalaryInfo[] }> =>
-    api.get('/hr/workers'),
+  listWorkers: () =>
+    api.get<{ data: WorkerSalaryInfo[] }>('/hr/workers').then((r) => r.data),
 
-  setSalaryRate: (workerId: string, payload: SetSalaryRatePayload): Promise<{ data: unknown }> =>
-    api.post(`/hr/workers/${workerId}/salary-rate`, payload),
+  setSalaryRate: (workerId: string, payload: SetSalaryRatePayload) =>
+    api.post<{ data: unknown }>(`/hr/workers/${workerId}/salary-rate`, payload).then((r) => r.data),
 
   // Advances
-  listAdvances: (params?: { workerId?: string; recovered?: boolean }): Promise<{ data: WorkerAdvance[]; meta: { page: number; totalPages: number } }> =>
-    api.get('/hr/advances', { params }),
+  listAdvances: (params?: { workerId?: string; recovered?: boolean }) =>
+    api.get<{ data: WorkerAdvance[]; meta: { page: number; totalPages: number } }>('/hr/advances', { params }).then((r) => r.data),
 
-  createAdvance: (workerId: string, payload: CreateAdvancePayload): Promise<{ data: WorkerAdvance }> =>
-    api.post(`/hr/workers/${workerId}/advances`, payload),
+  createAdvance: (workerId: string, payload: CreateAdvancePayload) =>
+    api.post<{ data: WorkerAdvance }>(`/hr/workers/${workerId}/advances`, payload).then((r) => r.data),
 
-  markAdvanceRecovered: (advanceId: string): Promise<{ data: unknown }> =>
-    api.post(`/hr/advances/${advanceId}/recover`, {}),
+  markAdvanceRecovered: (advanceId: string) =>
+    api.post<{ data: unknown }>(`/hr/advances/${advanceId}/recover`, {}).then((r) => r.data),
 
   // Payroll
-  listPayroll: (params?: { year?: number; month?: number; workerId?: string }): Promise<{ data: PayrollRecord[]; meta: { page: number; totalPages: number } }> =>
-    api.get('/hr/payroll', { params }),
+  listPayroll: (params?: { year?: number; month?: number; workerId?: string }) =>
+    api.get<{ data: PayrollRecord[]; meta: { page: number; totalPages: number } }>('/hr/payroll', { params }).then((r) => r.data),
 
-  getMonthlySummary: (year: number, month: number): Promise<{ data: MonthlyPayrollSummary }> =>
-    api.get(`/hr/payroll/${year}/${month}/summary`),
+  getMonthlySummary: (year: number, month: number) =>
+    api.get<{ data: MonthlyPayrollSummary }>(`/hr/payroll/${year}/${month}/summary`).then((r) => r.data),
 
-  createPayroll: (payload: CreatePayrollPayload): Promise<{ data: PayrollRecord }> =>
-    api.post('/hr/payroll', payload),
+  createPayroll: (payload: CreatePayrollPayload) =>
+    api.post<{ data: PayrollRecord }>('/hr/payroll', payload).then((r) => r.data),
 };
