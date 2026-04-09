@@ -20,12 +20,11 @@ export function ProductionEntryComplete() {
 
   const [metersProduced, setMetersProduced] = useState('');
   const [gramsPerMeter, setGramsPerMeter] = useState('');
-  const [electricityEnd, setElectricityEnd] = useState('');
   const [scrapWeightGrams, setScrapWeightGrams] = useState('');
+  const [electricityEnd, setElectricityEnd] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Load the existing entry to show a summary
   const { data: entryResp, isLoading } = useQuery({
     queryKey: ['production-entry', id],
     queryFn: () => productionApi.getEntryById(id!),
@@ -33,31 +32,35 @@ export function ProductionEntryComplete() {
   });
   const entry = entryResp?.data;
 
-  // Pre-fill grams from variant standard
+  // Pre-fill grams/meter from variant standard value
   useEffect(() => {
-    if (entry?.variant?.standardGramsPerMeter && !gramsPerMeter) {
-      setGramsPerMeter(String(entry.variant.standardGramsPerMeter));
-    }
-  }, [entry, gramsPerMeter]);
+    if (!entry?.shiftVariants?.length) return;
+    const sv = entry.shiftVariants[0];
+    if (sv?.metersProduced != null && sv.metersProduced > 0)
+      setMetersProduced(String(sv.metersProduced));
+    if (gramsPerMeter === '' && sv?.gramsPerMeter != null)
+      setGramsPerMeter(String(sv.gramsPerMeter));
+    else if (gramsPerMeter === '' && sv?.variant?.standardGramsPerMeter != null)
+      setGramsPerMeter(String(sv.variant.standardGramsPerMeter));
+    if (sv?.scrapWeightGrams != null && sv.scrapWeightGrams > 0)
+      setScrapWeightGrams(String(sv.scrapWeightGrams));
+  }, [entry]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Computed electricity units
   const elecStart = entry?.electricityStartReading;
   const electricityUnits =
     elecStart != null && electricityEnd
       ? Math.max(0, Number(electricityEnd) - elecStart)
       : null;
 
+  const variant = entry?.shiftVariants?.[0];
+
   const validate = useCallback((): boolean => {
     const errs: FormErrors = {};
     if (!metersProduced || Number(metersProduced) <= 0)
-      errs.metersProduced = 'Enter valid meters produced';
+      errs.metersProduced = 'Enter meters produced (must be > 0)';
     if (!gramsPerMeter || Number(gramsPerMeter) <= 0)
-      errs.gramsPerMeter = 'Enter valid grams per meter';
-    if (
-      elecStart != null &&
-      electricityEnd &&
-      Number(electricityEnd) < elecStart
-    )
+      errs.gramsPerMeter = 'Enter grams per meter (must be > 0)';
+    if (elecStart != null && electricityEnd && Number(electricityEnd) < elecStart)
       errs.electricityEnd = 'End reading must be ≥ start reading';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -77,12 +80,17 @@ export function ProductionEntryComplete() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!validate() || !variant) return;
     mutation.mutate({
-      metersProduced: Number(metersProduced),
-      gramsPerMeter: Number(gramsPerMeter),
       electricityEndReading: electricityEnd ? Number(electricityEnd) : undefined,
-      scrapWeightGrams: scrapWeightGrams ? Number(scrapWeightGrams) : undefined,
+      variants: [
+        {
+          variantId: variant.variantId,
+          metersProduced: Number(metersProduced),
+          gramsPerMeter: Number(gramsPerMeter),
+          scrapWeightGrams: scrapWeightGrams ? Number(scrapWeightGrams) : undefined,
+        },
+      ],
     });
   };
 
@@ -114,7 +122,6 @@ export function ProductionEntryComplete() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Complete Production</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -133,7 +140,13 @@ export function ProductionEntryComplete() {
           <span className="font-medium">Date:</span>
           <span>{entry.date}</span>
           <span className="font-medium">Variant:</span>
-          <span>{entry.variant.code} – {entry.variant.name}</span>
+          <span>{variant ? `${variant.variant.code} – ${variant.variant.name}` : '—'}</span>
+          {entry.machine && (
+            <>
+              <span className="font-medium">Machine:</span>
+              <span>{entry.machine.identifier}</span>
+            </>
+          )}
           {entry.electricityStartReading != null && (
             <>
               <span className="font-medium">Elec. Start:</span>
@@ -143,64 +156,94 @@ export function ProductionEntryComplete() {
           {entry.workers && entry.workers.length > 0 && (
             <>
               <span className="font-medium">Workers:</span>
-              <span>{entry.workers.map((w) => w.name).join(', ')}</span>
+              <span>
+                {entry.workers.map((w) => (
+                  <span key={w.id} className="mr-3">
+                    {w.name}
+                    {w.role && (
+                      <span className={`ml-1 rounded px-1 py-0.5 text-xs font-medium ${
+                        w.role === 'HEAD_OPERATOR'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {w.role === 'HEAD_OPERATOR' ? 'Head Op' : 'Asst'}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </span>
             </>
           )}
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
-        <div
-          className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
-            toast.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}
-        >
+        <div className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
+          toast.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+        }`}>
           {toast.message}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Meters & Grams */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Meters Produced</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={metersProduced}
-              onChange={(e) => setMetersProduced(e.target.value)}
-              placeholder="0"
-              min="1"
-              step="any"
-              className={`w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${
-                errors.metersProduced ? 'border-red-400' : 'border-gray-300'
-              }`}
-            />
-            {errors.metersProduced && (
-              <p className="mt-1 text-xs text-red-600">{errors.metersProduced}</p>
-            )}
+        {/* Production metrics */}
+        <fieldset className="rounded-lg border border-gray-200 p-4">
+          <legend className="px-2 text-sm font-medium text-gray-700">Production Data</legend>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Meters Produced <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={metersProduced}
+                onChange={(e) => setMetersProduced(e.target.value)}
+                placeholder="0"
+                min="1"
+                step="any"
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${
+                  errors.metersProduced ? 'border-red-400' : 'border-gray-300'
+                }`}
+              />
+              {errors.metersProduced && (
+                <p className="mt-1 text-xs text-red-600">{errors.metersProduced}</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Grams / Meter <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={gramsPerMeter}
+                onChange={(e) => setGramsPerMeter(e.target.value)}
+                placeholder="0"
+                min="0"
+                step="any"
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${
+                  errors.gramsPerMeter ? 'border-red-400' : 'border-gray-300'
+                }`}
+              />
+              {errors.gramsPerMeter && (
+                <p className="mt-1 text-xs text-red-600">{errors.gramsPerMeter}</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Scrap (grams, opt.)</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={scrapWeightGrams}
+                onChange={(e) => setScrapWeightGrams(e.target.value)}
+                placeholder="0"
+                min="0"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
           </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Grams per Meter</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={gramsPerMeter}
-              onChange={(e) => setGramsPerMeter(e.target.value)}
-              placeholder="0"
-              min="0"
-              step="any"
-              className={`w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${
-                errors.gramsPerMeter ? 'border-red-400' : 'border-gray-300'
-              }`}
-            />
-            {errors.gramsPerMeter && (
-              <p className="mt-1 text-xs text-red-600">{errors.gramsPerMeter}</p>
-            )}
-          </div>
-        </div>
+        </fieldset>
 
         {/* Electricity end reading */}
         <fieldset className="rounded-lg border border-gray-200 p-4">
@@ -231,22 +274,6 @@ export function ProductionEntryComplete() {
             </div>
           </div>
         </fieldset>
-
-        {/* Scrap */}
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Scrap Weight (grams, optional)
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={scrapWeightGrams}
-            onChange={(e) => setScrapWeightGrams(e.target.value)}
-            placeholder="0"
-            min="0"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
 
         {/* Actions */}
         <div className="flex gap-3 pt-2">

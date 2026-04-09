@@ -34,7 +34,7 @@ export function ClientOrderHistory() {
       key: 'variant',
       header: 'Variant',
       sortable: true,
-      render: (row) => `${row.variant.code} — ${row.variant.name}`,
+      render: (row) => row.lineItems.map((li) => `${li.variant.code} — ${li.variant.name}`).join(', '),
     },
     {
       key: 'metersOrdered',
@@ -96,7 +96,7 @@ export function ClientOrderHistory() {
         <StatusBadge status={row.status} />
       </div>
       <div className="text-sm text-gray-700">
-        {row.variant.code} — {row.variant.name}
+        {row.lineItems.map((li) => li.variant.code).join(', ')}
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>

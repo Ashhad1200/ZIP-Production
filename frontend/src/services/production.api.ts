@@ -18,29 +18,47 @@ export type Shift = 'DAY' | 'NIGHT';
 
 export type ProductionStatus = 'IN_PRODUCTION' | 'COMPLETED';
 
+export type WorkerRole = 'HEAD_OPERATOR' | 'ASSISTANT';
+
+export interface WorkerWithRole extends EntityRef {
+  role: WorkerRole | null;
+}
+
+export interface MachineRef {
+  id: string;
+  identifier: string;
+}
+
 export interface RawMaterialConsumed {
   grainType: string;
   gramsConsumed: number;
   bagsConsumed: number;
 }
 
+export interface ShiftVariant {
+  id: string;
+  variantId: string;
+  variant: VariantRef & { standardGramsPerMeter?: number };
+  metersProduced: number;
+  gramsPerMeter: number | null;
+  scrapWeightGrams: number;
+}
+
 export interface ProductionEntry {
   id: string;
   plant: EntityRef;
+  machine: MachineRef | null;
   shift: Shift;
   date: string;
   status: ProductionStatus;
-  variant: VariantRef & { standardGramsPerMeter?: number };
+  shiftVariants: ShiftVariant[];
   metersProduced: number | null;
-  gramsPerMeter: number | null;
   electricityUnitsConsumed: number | null;
   electricityStartReading: number | null;
   electricityEndReading: number | null;
   hasElectricityDiscrepancy: boolean;
   electricityDiscrepancyNotes: string | null;
-  scrapWeightGrams: number;
-  workers: EntityRef[];
-  rawMaterialConsumed: RawMaterialConsumed | null;
+  workers: WorkerWithRole[];
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
@@ -50,13 +68,21 @@ export interface ProductionEntry {
 export interface ProductionEntryCreateResult {
   id: string;
   plant: EntityRef;
+  machine: MachineRef | null;
   shift: Shift;
   date: string;
-  variant: VariantRef;
+  shiftVariants: ShiftVariant[];
   status: ProductionStatus;
-  workers: EntityRef[];
+  workers: WorkerWithRole[];
   electricityStartReading: number | null;
   version: number;
+}
+
+export interface CompleteVariantPayload {
+  variantId: string;
+  metersProduced: number;
+  gramsPerMeter: number;
+  scrapWeightGrams?: number;
 }
 
 export interface ProductionEntryCompleteResult {
@@ -64,27 +90,39 @@ export interface ProductionEntryCompleteResult {
   plant: EntityRef;
   shift: Shift;
   date: string;
-  variant: VariantRef;
+  shiftVariants: ShiftVariant[];
   status: ProductionStatus;
   metersProduced: number;
   hasElectricityDiscrepancy: boolean;
-  rawMaterialConsumed: { gramsConsumed: number; bagsConsumed: number };
-  stockUpdate: { variantId: string; newStockMeters: number };
+  rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number }[];
+  stockUpdates: { variantId: string; newStockMeters: number }[];
   version: number;
+}
+
+export interface WorkerAssignmentPayload {
+  workerId: string;
+  role?: WorkerRole;
 }
 
 export interface CreateProductionEntryPayload {
   plantId: string;
+  machineId?: string;
   shift: Shift;
   date: string;
-  variantId: string;
+  /** Single-variant convenience */
+  variantId?: string;
+  /** Multi-variant: one or more variants to produce in this shift */
+  variants?: { variantId: string }[];
   electricityStartReading?: number;
-  workerIds?: string[];
+  workers?: WorkerAssignmentPayload[];
 }
 
 export interface CompleteProductionEntryPayload {
-  metersProduced: number;
-  gramsPerMeter: number;
+  /** Multi-variant completion */
+  variants?: CompleteVariantPayload[];
+  /** Legacy flat fields for single-variant shifts */
+  metersProduced?: number;
+  gramsPerMeter?: number;
   electricityEndReading?: number;
   scrapWeightGrams?: number;
 }
@@ -96,7 +134,7 @@ export interface UpdateProductionEntryPayload {
   electricityStartReading?: number | null;
   electricityEndReading?: number | null;
   scrapWeightGrams?: number;
-  workerIds?: string[];
+  workers?: WorkerAssignmentPayload[];
 }
 
 export interface DPRShiftData {
@@ -104,7 +142,7 @@ export interface DPRShiftData {
   variants: { code: string; name: string; meters: number }[];
   electricityUnits: number;
   scrapGrams: number;
-  workers: string[];
+  workers: { name: string; role: string | null }[];
   hasDiscrepancy: boolean;
 }
 
@@ -146,17 +184,25 @@ export interface DiscrepancyEntry {
   plant: EntityRef;
   shift: Shift;
   date: string;
-  variant: VariantRef;
+  variant: VariantRef[];
   metersProduced: number;
   electricityUnitsConsumed: number;
   hasElectricityDiscrepancy: boolean;
   electricityDiscrepancyNotes: string | null;
 }
 
+export interface MachineLookup {
+  id: string;
+  identifier: string;
+  kwhRating: number;
+  expectedOutputPerShift: number;
+}
+
 export interface PlantLookup {
   id: string;
   name: string;
   location: string | null;
+  machines: MachineLookup[];
 }
 
 export interface WorkerLookup {

@@ -41,6 +41,7 @@ export interface GatePass {
   paymentDueDate: string;
   receivedAt: string | null;
   receivedBy: string | null;
+  receiptPhotoUrl: string | null;
   journalEntry: { id: string; entryNumber: string; status: string } | null;
   lineItems: GatePassLineItem[];
   verifyToken: string;
@@ -85,12 +86,19 @@ export interface VariantLookup {
   name: string;
 }
 
+export interface ClientOrderLineItem {
+  variantId: string;
+  variant: VariantRef;
+  metersOrdered: number;
+  metersDelivered: number;
+}
+
 export interface ClientOrder {
   id: string;
   orderNumber: string;
   metersOrdered: number;
   metersDelivered: number;
-  variant: VariantRef;
+  lineItems: ClientOrderLineItem[];
 }
 
 export interface ClientRateResult {
@@ -103,6 +111,7 @@ export interface StockResult {
 }
 
 export interface VerifyResult {
+  id: string;
   status: 'received' | 'already_received';
   gatePassNumber: string;
   clientName: string;
@@ -188,5 +197,14 @@ export const gatePassApi = {
   getStock: (variantId: string) =>
     api
       .get<{ data: StockResult }>(`/gate-passes/stock/${variantId}`)
+      .then((r) => r.data),
+
+  // Receipt photo upload (semi-public: token from QR flow OR authenticated)
+  uploadReceiptPhoto: (id: string, photoUrl: string, token?: string) =>
+    api
+      .patch<{ data: { id: string; receiptPhotoUrl: string } }>(
+        `/gate-passes/${id}/receipt-photo`,
+        { photoUrl, token },
+      )
       .then((r) => r.data),
 };

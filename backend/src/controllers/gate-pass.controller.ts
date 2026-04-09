@@ -223,6 +223,31 @@ export class GatePassController {
       next(error);
     }
   }
+
+  // ─── Receipt photo upload (PUBLIC or authenticated) ─────────────────────────
+
+  async uploadReceiptPhoto(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { photoUrl, token } = req.body;
+
+      if (!photoUrl || typeof photoUrl !== 'string') {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: 'photoUrl is required' },
+        });
+        return;
+      }
+
+      const result = await gatePassService.uploadReceiptPhoto(id as string, photoUrl, {
+        token: token as string | undefined,
+        userId: req.user?.userId,
+      });
+
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const gatePassController = new GatePassController();

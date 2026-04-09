@@ -41,15 +41,22 @@ export interface Company {
   isActive: boolean;
 }
 
+export interface VariantIngredient {
+  grainTypeId: string;
+  ratioPercent: number;
+  grainType: { id: string; code: string; name: string; bagWeightGrams: number };
+}
+
 export interface Variant {
   id: string;
   code: string;
   name: string;
   description: string | null;
   standardGramsPerMeter: number;
-  grainTypeId: string;
+  grainTypeId: string | null;
   isActive: boolean;
-  grainType?: { id: string; code: string; name: string };
+  grainType?: { id: string; code: string; name: string; bagWeightGrams: number } | null;
+  ingredients: VariantIngredient[];
 }
 
 export interface GrainType {
@@ -85,6 +92,7 @@ export interface Worker {
   isActive: boolean;
   plantId: string | null;
   plant?: { id: string; name: string } | null;
+  shiftCostPaisa: number | null;
 }
 
 export interface SystemSetting {
@@ -156,11 +164,17 @@ export const settingsApi = {
     code: string;
     name: string;
     standardGramsPerMeter: number;
-    grainTypeId: string;
+    ingredients: { grainTypeId: string; ratioPercent: number }[];
     description?: string;
   }) =>
     api.post<{ data: Variant }>('/settings/variants', data).then((r) => r.data),
-  updateVariant: (id: string, data: Partial<Variant>) =>
+  updateVariant: (id: string, data: {
+    name?: string;
+    standardGramsPerMeter?: number;
+    description?: string | null;
+    isActive?: boolean;
+    ingredients?: { grainTypeId: string; ratioPercent: number }[];
+  }) =>
     api.put<{ data: Variant }>(`/settings/variants/${id}`, data).then((r) => r.data),
 
   // Grain Types
@@ -212,6 +226,7 @@ export const settingsApi = {
     name: string;
     designation?: string;
     plantId?: string;
+    shiftCostPaisa?: number;
   }) =>
     api.post<{ data: Worker }>('/settings/workers', data).then((r) => r.data),
   updateWorker: (id: string, data: Partial<Worker>) =>

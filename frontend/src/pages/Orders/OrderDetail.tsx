@@ -85,7 +85,8 @@ export function OrderDetail() {
               </button>
             </p>
             <p className="text-sm text-gray-500">
-              Variant: {order.variant.code} — {order.variant.name}
+              Variant(s):{' '}
+              {order.lineItems.map((li) => `${li.variant.code} — ${li.variant.name}`).join(', ')}
             </p>
           </div>
           <div className="text-right text-sm text-gray-500">
@@ -173,48 +174,126 @@ export function OrderDetail() {
         </div>
       </div>
 
+      {/* Line items breakdown */}
+      <div className="rounded-lg border bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">
+          Order Line Items
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+              <tr>
+                <th className="px-3 py-2 text-left">Variant</th>
+                <th className="px-3 py-2 text-right">Ordered</th>
+                <th className="px-3 py-2 text-right">Delivered</th>
+                <th className="px-3 py-2 text-right">Remaining</th>
+                {canViewFinance() && <th className="px-3 py-2 text-right">Rate</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {order.lineItems.map((li) => {
+                const remaining = li.metersOrdered - li.metersDelivered;
+                return (
+                  <tr key={li.id}>
+                    <td className="px-3 py-2 font-medium text-gray-900">
+                      {li.variant.code} — {li.variant.name}
+                    </td>
+                    <td className="px-3 py-2 text-right">{li.metersOrdered.toLocaleString()}m</td>
+                    <td className="px-3 py-2 text-right">{li.metersDelivered.toLocaleString()}m</td>
+                    <td className={`px-3 py-2 text-right font-medium ${remaining === 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                      {remaining.toLocaleString()}m
+                    </td>
+                    {canViewFinance() && (
+                      <td className="px-3 py-2 text-right">{li.ratePerMeterDisplay ?? li.ratePerMeterPaisa ?? '—'}</td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Financial details (finance roles only) */}
-      {canViewFinance() &&
-        order.ratePerMeterPaisa !== undefined && (
+      {canViewFinance() && order.totalAmountPaisa !== undefined && (
           <div className="rounded-lg border bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-semibold text-gray-900">
               Financial Details
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-sm text-gray-500">Rate per Meter</p>
+                <p className="text-sm text-gray-500">Total Order Amount</p>
                 <p className="mt-1 text-lg font-bold text-gray-900">
-                  {order.ratePerMeterDisplay ||
-                    formatPaisaToRupees(order.ratePerMeterPaisa)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Total Amount</p>
-                <p className="mt-1 text-lg font-bold text-gray-900">
-                  {order.totalAmountDisplay ||
-                    formatPaisaToRupees(order.totalAmountPaisa ?? 0)}
+                  {order.totalAmountDisplay || formatPaisaToRupees(Number(order.totalAmountPaisa))}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Client Outstanding</p>
                 <p className="mt-1 text-lg font-bold text-amber-700">
                   {order.clientOutstandingDisplay ||
-                    formatPaisaToRupees(order.clientOutstandingPaisa ?? 0)}
+                    formatPaisaToRupees(Number(order.clientOutstandingPaisa ?? 0))}
                 </p>
               </div>
             </div>
           </div>
         )}
 
-      {/* Delivery history placeholder */}
+      {/* Delivery history */}
       <div className="rounded-lg border bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">
           Delivery History
         </h2>
-        <p className="text-sm text-gray-500">
-          Linked gate pass deliveries will appear here as meters are delivered
-          against this order.
-        </p>
+        {(!order.deliveries || order.deliveries.length === 0) ? (
+          <p className="text-sm text-gray-500">
+            No gate pass deliveries linked to this order yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">Gate Pass #</th>
+                  <th className="px-3 py-2 text-left">Date</th>
+                  <th className="px-3 py-2 text-left">Variants Delivered</th>
+                  <th className="px-3 py-2 text-right">Total Meters</th>
+                  {canViewFinance() && <th className="px-3 py-2 text-right">Amount</th>}
+                  <th className="px-3 py-2 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {order.deliveries.map((d) => {
+                  const totalMeters = d.lineItems.reduce((s, li) => s + li.meters, 0);
+                  return (
+                    <tr key={d.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium text-blue-700">{d.gatePassNumber}</td>
+                      <td className="px-3 py-2 text-gray-500">{formatDatePKT(d.date)}</td>
+                      <td className="px-3 py-2 text-gray-700">
+                        {d.lineItems.map((li) => (
+                          <span key={li.id} className="mr-2">
+                            {li.variant.code} – {li.meters.toLocaleString()}m
+                          </span>
+                        ))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium">{totalMeters.toLocaleString()}m</td>
+                      {canViewFinance() && (
+                        <td className="px-3 py-2 text-right text-gray-700">{d.totalAmountDisplay ?? '—'}</td>
+                      )}
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          d.status === 'RECEIVED' ? 'bg-green-100 text-green-700' :
+                          d.status === 'DISPATCHED' ? 'bg-blue-100 text-blue-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {d.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

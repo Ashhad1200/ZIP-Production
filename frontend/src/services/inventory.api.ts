@@ -87,6 +87,39 @@ export interface ConsumptionReportData {
   grainTypes: ConsumptionGrainData[];
 }
 
+// ─── FIFO Batch types ─────────────────────────────────────────────────────────
+
+export interface FifoBatch {
+  id: string;
+  grainType: GrainTypeRef;
+  purchaseDate: string;
+  source: 'CONTAINER' | 'SPOT_MARKET';
+  bagsTotal: number;
+  bagsRemaining: number;
+  bagsConsumed: number;
+  pricePerBagPaisa: number;
+  pricePerBagDisplay: string;
+  isExhausted: boolean;
+  purchaseId: string;
+}
+
+// ─── Electricity Rate types ───────────────────────────────────────────────────
+
+export interface ElectricityRate {
+  id: string;
+  ratePaisaPerUnit: number;
+  rateDisplay: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  notes: string | null;
+}
+
+export interface CreateElectricityRatePayload {
+  ratePaisaPerUnit: number;
+  effectiveFrom: string;
+  notes?: string;
+}
+
 // API methods
 export const inventoryApi = {
   getFinishedGoods: (params: FinishedGoodsFilters = {}) =>
@@ -109,4 +142,18 @@ export const inventoryApi = {
 
   updateRawMaterialThreshold: (id: string, thresholdBags: number) =>
     api.put<{ data: RawMaterialStockItem }>(`/inventory/raw-materials/${id}/threshold`, { thresholdBags }).then(r => r.data),
+
+  // FIFO Batches
+  getBatches: (params: { grainTypeId?: string; includeExhausted?: boolean } = {}) =>
+    api.get<{ data: FifoBatch[] }>('/inventory/raw-materials/batches', { params }).then(r => r.data),
+
+  // Electricity Rates
+  getElectricityRates: () =>
+    api.get<{ data: ElectricityRate[] }>('/inventory/electricity-rates').then(r => r.data),
+
+  getCurrentElectricityRate: () =>
+    api.get<{ data: ElectricityRate | null }>('/inventory/electricity-rates/current').then(r => r.data),
+
+  createElectricityRate: (data: CreateElectricityRatePayload) =>
+    api.post<{ data: ElectricityRate }>('/inventory/electricity-rates', data).then(r => r.data),
 };

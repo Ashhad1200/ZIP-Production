@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Truck, Package, Printer } from 'lucide-react';
+import { ArrowLeft, Truck, Package, Printer, Image } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { gatePassApi } from '../../services/gate-pass.api';
 import { LoadingSpinner, StatusBadge, ConfirmDialog } from '../../components/ui';
 
@@ -279,6 +280,50 @@ export function GatePassDetail() {
           {gatePass.receivedAt && <> &middot; Received: {new Date(gatePass.receivedAt).toLocaleString('en-PK')}</>}
         </p>
       </div>
+
+      {/* QR Code — always visible once created */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="mb-3 text-sm font-semibold uppercase text-gray-500">Verification QR Code</h2>
+        <div className="flex items-start gap-6">
+          <div className="rounded-xl border-2 border-gray-200 bg-gray-50 p-3">
+            <QRCodeCanvas
+              value={`${window.location.origin}/gp-verify?token=${gatePass.verifyToken}`}
+              size={120}
+              level="M"
+            />
+          </div>
+          <div className="flex-1 text-sm text-gray-600">
+            <p className="font-medium text-gray-900 mb-1">Driver scans this QR at delivery</p>
+            <p className="text-xs text-gray-500 mb-3">
+              The driver opens the camera, scans the code, and uploads a photo of the signed receipt.
+              The gate pass status will update to <span className="font-semibold text-green-700">Received</span> automatically.
+            </p>
+            <p className="text-xs text-gray-400 break-all">
+              {`${window.location.origin}/gp-verify?token=${gatePass.verifyToken}`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Receipt Photo */}
+      {gatePass.receiptPhotoUrl && (
+        <div className="rounded-lg border bg-white p-5 shadow-sm">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase text-gray-500">
+            <Image size={16} />
+            Proof of Delivery — Signed Receipt Photo
+          </h2>
+          <img
+            src={gatePass.receiptPhotoUrl}
+            alt="Signed receipt"
+            className="max-h-80 w-full rounded-lg object-contain border cursor-pointer"
+            onClick={() => window.open(gatePass.receiptPhotoUrl!, '_blank')}
+            title="Click to open full-size"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Uploaded via QR scan · Click image to view full size
+          </p>
+        </div>
+      )}
 
       {/* Dispatch Confirm Dialog */}
       <ConfirmDialog

@@ -8,6 +8,8 @@ import financeRoutes from './finance.routes';
 import settingsRoutes from './settings.routes';
 import dashboardRoutes from './dashboard.routes';
 import hrRoutes from './hr.routes';
+import costPriceRoutes from './cost-price.routes';
+import salesReturnRoutes from './sales-return.routes';
 import { authenticate } from '../middleware/auth.middleware';
 import { notificationService } from '../services/notification.service';
 import { AuthenticatedRequest } from '../types';
@@ -40,6 +42,12 @@ router.use('/dashboard', dashboardRoutes);
 
 // HR routes (all protected via route-level middleware)
 router.use('/hr', hrRoutes);
+
+// Cost Price routes (Super Admin + Finance Head only)
+router.use('/cost-price', costPriceRoutes);
+
+// Sales Return routes
+router.use('/sales-returns', salesReturnRoutes);
 
 // Notification routes (all protected)
 router.get('/notifications', authenticate, async (req: AuthenticatedRequest, res, next) => {

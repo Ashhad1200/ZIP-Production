@@ -264,7 +264,13 @@ export class SettingsController {
     try {
       const variants = await prisma.zipperVariant.findMany({
         where: { isDeleted: false },
-        include: { grainType: { select: { id: true, code: true, name: true } } },
+        include: {
+          grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
+          ingredients: {
+            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            orderBy: { ratioPercent: 'desc' },
+          },
+        },
       });
       res.json({ data: variants });
     } catch (error) {
@@ -274,15 +280,47 @@ export class SettingsController {
 
   async createVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { code, name, standardGramsPerMeter, grainTypeId, description } = req.body;
-      if (!code || !name || standardGramsPerMeter == null || !grainTypeId) {
+      const { code, name, standardGramsPerMeter, description, ingredients } = req.body;
+      // ingredients: [{ grainTypeId: string; ratioPercent: number }]
+      if (!code || !name || standardGramsPerMeter == null) {
         res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'code, name, standardGramsPerMeter, and grainTypeId are required' },
+          error: { code: 'VALIDATION_ERROR', message: 'code, name, and standardGramsPerMeter are required' },
         });
         return;
       }
+      if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient (grain type) is required' },
+        });
+        return;
+      }
+      const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+      if (Math.abs(totalRatio - 100) > 0.01) {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
+        });
+        return;
+      }
+
       const variant = await prisma.zipperVariant.create({
-        data: { code, name, standardGramsPerMeter, grainTypeId, description, createdBy: req.user!.userId },
+        data: {
+          code,
+          name,
+          standardGramsPerMeter,
+          description,
+          createdBy: req.user!.userId,
+          ingredients: {
+            create: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+              grainTypeId: i.grainTypeId,
+              ratioPercent: i.ratioPercent,
+            })),
+          },
+        },
+        include: {
+          ingredients: {
+            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+          },
+        },
       });
       res.status(201).json({ data: variant });
     } catch (error) {
@@ -293,16 +331,51 @@ export class SettingsController {
   async updateVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, standardGramsPerMeter, description, isActive } = req.body;
-      const variant = await prisma.zipperVariant.update({
-        where: { id },
-        data: {
-          ...(name !== undefined && { name }),
-          ...(standardGramsPerMeter !== undefined && { standardGramsPerMeter }),
-          ...(description !== undefined && { description }),
-          ...(isActive !== undefined && { isActive }),
-          updatedBy: req.user!.userId,
-        },
+      const { name, standardGramsPerMeter, description, isActive, ingredients } = req.body;
+
+      // Validate ingredient ratios if provided
+      if (ingredients !== undefined) {
+        if (!Array.isArray(ingredients) || ingredients.length === 0) {
+          res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient is required' } });
+          return;
+        }
+        const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+        if (Math.abs(totalRatio - 100) > 0.01) {
+          res.status(422).json({
+            error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
+          });
+          return;
+        }
+      }
+
+      const variant = await prisma.$transaction(async (tx) => {
+        if (ingredients !== undefined) {
+          // Replace all ingredients atomically
+          await tx.variantIngredient.deleteMany({ where: { variantId: id } });
+          await tx.variantIngredient.createMany({
+            data: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+              variantId: id,
+              grainTypeId: i.grainTypeId,
+              ratioPercent: i.ratioPercent,
+            })),
+          });
+        }
+        return tx.zipperVariant.update({
+          where: { id },
+          data: {
+            ...(name !== undefined && { name }),
+            ...(standardGramsPerMeter !== undefined && { standardGramsPerMeter }),
+            ...(description !== undefined && { description }),
+            ...(isActive !== undefined && { isActive }),
+            updatedBy: req.user!.userId,
+          },
+          include: {
+            ingredients: {
+              include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+              orderBy: { ratioPercent: 'desc' },
+            },
+          },
+        });
       });
       res.json({ data: variant });
     } catch (error) {
@@ -452,15 +525,21 @@ export class SettingsController {
 
   async createWorker(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { name, designation, plantId } = req.body;
+      const { name, designation, plantId, shiftCostPaisa } = req.body;
       if (!name) {
         res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'name is required' } });
         return;
       }
       const worker = await prisma.worker.create({
-        data: { name, designation, plantId, createdBy: req.user!.userId },
+        data: {
+          name,
+          designation,
+          plantId,
+          ...(shiftCostPaisa != null ? { shiftCostPaisa: BigInt(shiftCostPaisa) } : {}),
+          createdBy: req.user!.userId,
+        },
       });
-      res.status(201).json({ data: worker });
+      res.status(201).json({ data: { ...worker, shiftCostPaisa: worker.shiftCostPaisa?.toString() ?? null } });
     } catch (error) {
       next(error);
     }
@@ -469,7 +548,7 @@ export class SettingsController {
   async updateWorker(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, designation, plantId, isActive } = req.body;
+      const { name, designation, plantId, isActive, shiftCostPaisa } = req.body;
       const worker = await prisma.worker.update({
         where: { id },
         data: {
@@ -477,10 +556,11 @@ export class SettingsController {
           ...(designation !== undefined && { designation }),
           ...(plantId !== undefined && { plantId }),
           ...(isActive !== undefined && { isActive }),
+          ...(shiftCostPaisa !== undefined && { shiftCostPaisa: shiftCostPaisa != null ? BigInt(shiftCostPaisa) : null }),
           updatedBy: req.user!.userId,
         },
       });
-      res.json({ data: worker });
+      res.json({ data: { ...worker, shiftCostPaisa: worker.shiftCostPaisa?.toString() ?? null } });
     } catch (error) {
       next(error);
     }

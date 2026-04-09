@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { AuditAction, NotificationType, Prisma, ProductionStatus, Role, Shift } from '@prisma/client';
+import { AuditAction, NotificationType, Prisma, ProductionStatus, Role, Shift, WorkerRole } from '@prisma/client';
 import { calculateRawMaterialConsumption, detectElectricityDiscrepancy } from '../utils/formulas';
 import { formatPaisaToRupees } from '../utils/currency';
 import { generateSequenceNumber } from '../utils/sequence';
@@ -12,20 +12,41 @@ import { toISODate } from '../utils/date';
 const SHIFT_HOURS = 12;
 const ELECTRICITY_DISCREPANCY_THRESHOLD_PERCENT = 15;
 
+interface WorkerAssignment {
+  workerId: string;
+  role?: WorkerRole;
+}
+
 interface CreateProductionEntryInput {
   plantId: string;
+  machineId?: string;
   shift: Shift;
   date: string; // YYYY-MM-DD
-  variantId: string;
+  /** Single variant (legacy / convenience for single-variant shifts) */
+  variantId?: string;
+  /** Multi-variant: provide one or more variants to produce in this shift */
+  variants?: { variantId: string }[];
   electricityStartReading?: number;
+  workers?: WorkerAssignment[];
+  /** @deprecated use workers instead */
   workerIds?: string[];
 }
 
-interface CompleteProductionEntryInput {
+interface CompleteVariantInput {
+  variantId: string;
   metersProduced: number;
   gramsPerMeter: number;
-  electricityEndReading?: number;
   scrapWeightGrams?: number;
+}
+
+interface CompleteProductionEntryInput {
+  /** Multi-variant completion: one entry per variant */
+  variants?: CompleteVariantInput[];
+  /** Legacy flat fields — used when entry has exactly one shift variant */
+  metersProduced?: number;
+  gramsPerMeter?: number;
+  scrapWeightGrams?: number;
+  electricityEndReading?: number;
 }
 
 interface UpdateProductionEntryInput {
@@ -35,6 +56,8 @@ interface UpdateProductionEntryInput {
   electricityStartReading?: number;
   electricityEndReading?: number;
   scrapWeightGrams?: number;
+  workers?: WorkerAssignment[];
+  /** @deprecated use workers instead */
   workerIds?: string[];
 }
 
@@ -54,75 +77,95 @@ export class ProductionService {
    */
   async createEntry(input: CreateProductionEntryInput, userId: string) {
     return prisma.$transaction(async (tx) => {
-      // Check duplicate (plantId, shift, date)
       const entryDate = new Date(input.date + 'T00:00:00.000Z');
-      const existing = await tx.productionEntry.findUnique({
-        where: {
-          plantId_shift_date: {
-            plantId: input.plantId,
-            shift: input.shift,
-            date: entryDate,
-          },
-        },
-      });
 
-      if (existing) {
-        throw Object.assign(
-          new Error('Production entry for this plant, shift, and date already exists'),
-          { statusCode: 409, code: 'DUPLICATE_ENTRY' }
-        );
+      // Normalize variants array — supports both single variantId and variants[]
+      const variantInputs: { variantId: string }[] = input.variants?.length
+        ? input.variants
+        : input.variantId
+        ? [{ variantId: input.variantId }]
+        : [];
+
+      if (variantInputs.length === 0) {
+        throw Object.assign(new Error('At least one variant must be specified'), { statusCode: 400, code: 'VARIANT_REQUIRED' });
       }
 
-      // Verify variant exists
-      const variant = await tx.zipperVariant.findUnique({
-        where: { id: input.variantId },
-        include: { grainType: true },
-      });
-      if (!variant) {
-        throw Object.assign(new Error('Variant not found'), { statusCode: 404, code: 'VARIANT_NOT_FOUND' });
+      // Verify all variants exist
+      for (const v of variantInputs) {
+        const variant = await tx.zipperVariant.findUnique({ where: { id: v.variantId } });
+        if (!variant) {
+          throw Object.assign(new Error(`Variant not found: ${v.variantId}`), { statusCode: 404, code: 'VARIANT_NOT_FOUND' });
+        }
       }
 
       // Create entry in IN_PRODUCTION status — no stock changes yet
+      const workerAssignments: WorkerAssignment[] = input.workers ?? (input.workerIds ?? []).map((id) => ({ workerId: id }));
       const entry = await tx.productionEntry.create({
         data: {
           plantId: input.plantId,
+          machineId: input.machineId,
           shift: input.shift,
           date: entryDate,
-          variantId: input.variantId,
+          // variantId left null — all variant info stored in shiftVariants
           status: ProductionStatus.IN_PRODUCTION,
           electricityStartReading: input.electricityStartReading != null
             ? new Prisma.Decimal(input.electricityStartReading)
             : undefined,
           createdBy: userId,
           updatedBy: userId,
-          ...(input.workerIds && input.workerIds.length > 0
-            ? { workers: { create: input.workerIds.map((workerId) => ({ workerId })) } }
+          ...(workerAssignments.length > 0
+            ? { workers: { create: workerAssignments.map(({ workerId, role }) => ({ workerId, role: role ?? null })) } }
             : {}),
         },
         include: {
           plant: { select: { id: true, name: true } },
-          variant: { select: { id: true, code: true, name: true } },
+          machine: { select: { id: true, identifier: true } },
           workers: { include: { worker: { select: { id: true, name: true } } } },
         },
+      });
+
+      // Create a ProductionShiftVariant record for each variant (metrics filled at completion)
+      for (const v of variantInputs) {
+        await tx.productionShiftVariant.create({
+          data: {
+            entryId: entry.id,
+            variantId: v.variantId,
+            metersProduced: 0,
+            scrapWeightGrams: 0,
+          },
+        });
+      }
+
+      const shiftVariants = await tx.productionShiftVariant.findMany({
+        where: { entryId: entry.id },
+        include: { variant: { select: { id: true, code: true, name: true, standardGramsPerMeter: true } } },
       });
 
       await auditService.log({
         entityType: 'ProductionEntry',
         entityId: entry.id,
         action: AuditAction.CREATE,
-        newValue: { plantId: entry.plantId, shift: entry.shift, date: toISODate(entry.date), variantId: entry.variantId, status: 'IN_PRODUCTION' },
-        changedFields: ['plantId', 'shift', 'date', 'variantId', 'status'],
+        newValue: { plantId: entry.plantId, shift: entry.shift, date: toISODate(entry.date), variantIds: variantInputs.map(v => v.variantId), status: 'IN_PRODUCTION' },
+        changedFields: ['plantId', 'shift', 'date', 'variantIds', 'status'],
         userId,
       });
 
       return {
         id: entry.id,
         plant: entry.plant,
+        machine: entry.machine,
         shift: entry.shift,
         date: toISODate(entry.date),
-        variant: entry.variant,
+        shiftVariants: shiftVariants.map((sv) => ({
+          id: sv.id,
+          variantId: sv.variantId,
+          variant: { ...sv.variant, standardGramsPerMeter: Number(sv.variant.standardGramsPerMeter) },
+          metersProduced: sv.metersProduced,
+          gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
+          scrapWeightGrams: sv.scrapWeightGrams,
+        })),
         status: entry.status,
-        workers: entry.workers.map((w) => w.worker),
+        workers: entry.workers.map((w) => ({ ...w.worker, role: w.role })),
         electricityStartReading: entry.electricityStartReading ? Number(entry.electricityStartReading) : null,
         version: entry.version,
       };
@@ -139,8 +182,17 @@ export class ProductionService {
       const existing = await tx.productionEntry.findFirst({
         where: { id, isDeleted: false },
         include: {
-          variant: { include: { grainType: true } },
           plant: { select: { id: true, name: true } },
+          shiftVariants: {
+            include: {
+              variant: {
+                include: {
+                  grainType: true,
+                  ingredients: { include: { grainType: true } },
+                },
+              },
+            },
+          },
         },
       });
 
@@ -152,6 +204,25 @@ export class ProductionService {
         throw Object.assign(
           new Error('Only IN_PRODUCTION entries can be completed'),
           { statusCode: 409, code: 'ALREADY_COMPLETED' }
+        );
+      }
+
+      // Normalize variant inputs — support both multi-variant and legacy flat fields
+      let variantCompletions: CompleteVariantInput[];
+      if (input.variants && input.variants.length > 0) {
+        variantCompletions = input.variants;
+      } else if (input.metersProduced != null && input.gramsPerMeter != null && existing.shiftVariants.length === 1) {
+        // Legacy single-variant flat input
+        variantCompletions = [{
+          variantId: existing.shiftVariants[0].variantId,
+          metersProduced: input.metersProduced,
+          gramsPerMeter: input.gramsPerMeter,
+          scrapWeightGrams: input.scrapWeightGrams,
+        }];
+      } else {
+        throw Object.assign(
+          new Error('Variant completion data required. Provide variants[] or flat metersProduced/gramsPerMeter for single-variant entries.'),
+          { statusCode: 400, code: 'COMPLETION_DATA_REQUIRED' }
         );
       }
 
@@ -168,46 +239,131 @@ export class ProductionService {
         electricityUnitsConsumed = input.electricityEndReading - startReading;
       }
 
-      // 1. Calculate raw material consumption
-      const { gramsConsumed, bagsConsumed } = calculateRawMaterialConsumption(
-        input.gramsPerMeter,
-        input.metersProduced,
-        existing.variant.grainType.bagWeightGrams
-      );
+      let totalMetersProduced = 0;
+      const stockUpdates: { variantId: string; newStockMeters: number }[] = [];
+      const rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number }[] = [];
 
-      // 2. Deduct raw material stock
-      const rawMaterialStock = await tx.rawMaterialStock.findUnique({
-        where: { grainTypeId: existing.variant.grainTypeId },
-      });
+      // Process each variant: raw material deduction + FG stock + FIFO
+      for (const vc of variantCompletions) {
+        const shiftVariant = existing.shiftVariants.find((sv) => sv.variantId === vc.variantId);
+        if (!shiftVariant) {
+          throw Object.assign(
+            new Error(`Variant ${vc.variantId} is not registered for this shift. Add it at shift start.`),
+            { statusCode: 422, code: 'VARIANT_NOT_IN_SHIFT' }
+          );
+        }
 
-      if (!rawMaterialStock) {
-        throw Object.assign(
-          new Error(`No raw material stock record found for grain type ${existing.variant.grainType.name}`),
-          { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
+        const variant = shiftVariant.variant;
+
+        // Calculate raw material consumption for this variant
+        const { gramsConsumed, bagsConsumed: totalBagsConsumed } = calculateRawMaterialConsumption(
+          vc.gramsPerMeter,
+          vc.metersProduced,
+          // Use primary grain's bagWeightGrams for total calc (or first ingredient's if no primary)
+          (variant.grainType ?? variant.ingredients[0]?.grainType)?.bagWeightGrams ?? 25000
         );
+
+        // Resolve the list of ingredients (handles both legacy single-grain and new multi-seed)
+        type IngredientEntry = { grainTypeId: string; grainType: { name: string; bagWeightGrams: number }; ratioPercent: number };
+        let ingredientList: IngredientEntry[];
+        if (variant.ingredients && variant.ingredients.length > 0) {
+          ingredientList = variant.ingredients.map((ing) => ({
+            grainTypeId: ing.grainTypeId,
+            grainType: ing.grainType,
+            ratioPercent: Number(ing.ratioPercent),
+          }));
+        } else if (variant.grainTypeId && variant.grainType) {
+          // Legacy: single grain at 100%
+          ingredientList = [{ grainTypeId: variant.grainTypeId, grainType: variant.grainType, ratioPercent: 100 }];
+        } else {
+          throw Object.assign(
+            new Error(`Variant ${variant.code} has no grain ingredients configured`),
+            { statusCode: 422, code: 'NO_INGREDIENTS' }
+          );
+        }
+
+        // Deduct raw material stock per ingredient proportionally
+        for (const ing of ingredientList) {
+          const ratio = ing.ratioPercent / 100;
+          const ingGramsConsumed = gramsConsumed * ratio;
+          const ingBagsConsumed = ingGramsConsumed / ing.grainType.bagWeightGrams;
+
+          // Deduct raw material stock
+          const rawMaterialStock = await tx.rawMaterialStock.findUnique({
+            where: { grainTypeId: ing.grainTypeId },
+          });
+
+          if (!rawMaterialStock) {
+            throw Object.assign(
+              new Error(`No raw material stock for grain type ${ing.grainType.name}`),
+              { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
+            );
+          }
+
+          const currentBags = Number(rawMaterialStock.currentBags);
+          if (currentBags < ingBagsConsumed) {
+            throw Object.assign(
+              new Error(`Insufficient stock for ${ing.grainType.name}. Available: ${currentBags.toFixed(4)} bags, Required: ${ingBagsConsumed.toFixed(4)} bags`),
+              { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
+            );
+          }
+
+          await tx.rawMaterialStock.update({
+            where: { id: rawMaterialStock.id },
+            data: { currentBags: new Prisma.Decimal(currentBags - ingBagsConsumed), updatedBy: userId },
+          });
+
+          // FIFO batch deduction for this ingredient's grain type
+          try {
+            const fifoResult = await inventoryService.deductFifoBatches(
+              ing.grainTypeId,
+              ingBagsConsumed,
+              userId,
+              tx
+            );
+            if (fifoResult && fifoResult.breakdown.length > 0) {
+              for (const b of fifoResult.breakdown) {
+                await tx.productionBatchConsumption.create({
+                  data: {
+                    productionEntryId: id,
+                    batchId: b.batchId,
+                    bagsConsumed: new Prisma.Decimal(b.bagsConsumed),
+                    totalCostPaisa: b.costPaisa,
+                  },
+                });
+              }
+            }
+          } catch {
+            // FIFO deduction is best-effort; skip if no batches exist
+          }
+
+          rawMaterialConsumed.push({ grainType: ing.grainType.name, gramsConsumed: ingGramsConsumed, bagsConsumed: ingBagsConsumed });
+          await inventoryService.checkAndNotifyLowStock('raw_material', ing.grainTypeId);
+        }
+
+        // Update finished goods stock for this variant
+        const fgStock = await tx.finishedGoodsStock.upsert({
+          where: { variantId: vc.variantId },
+          create: { variantId: vc.variantId, currentMeters: vc.metersProduced, createdBy: userId, updatedBy: userId },
+          update: { currentMeters: { increment: vc.metersProduced }, updatedBy: userId },
+        });
+
+        // Update the ProductionShiftVariant record with actuals
+        await tx.productionShiftVariant.update({
+          where: { entryId_variantId: { entryId: id, variantId: vc.variantId } },
+          data: {
+            metersProduced: vc.metersProduced,
+            gramsPerMeter: new Prisma.Decimal(vc.gramsPerMeter),
+            scrapWeightGrams: vc.scrapWeightGrams ?? 0,
+          },
+        });
+
+        totalMetersProduced += vc.metersProduced;
+        stockUpdates.push({ variantId: vc.variantId, newStockMeters: fgStock.currentMeters });
+        await inventoryService.checkAndNotifyLowStock('finished_goods', vc.variantId);
       }
 
-      const currentBags = Number(rawMaterialStock.currentBags);
-      if (currentBags < bagsConsumed) {
-        throw Object.assign(
-          new Error(`Insufficient raw material stock. Available: ${currentBags.toFixed(4)} bags, Required: ${bagsConsumed.toFixed(4)} bags`),
-          { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
-        );
-      }
-
-      await tx.rawMaterialStock.update({
-        where: { id: rawMaterialStock.id },
-        data: { currentBags: new Prisma.Decimal(currentBags - bagsConsumed), updatedBy: userId },
-      });
-
-      // 3. Increase finished goods stock
-      const fgStock = await tx.finishedGoodsStock.upsert({
-        where: { variantId: existing.variantId },
-        create: { variantId: existing.variantId, currentMeters: input.metersProduced, createdBy: userId, updatedBy: userId },
-        update: { currentMeters: { increment: input.metersProduced }, updatedBy: userId },
-      });
-
-      // 4. Electricity discrepancy check
+      // Electricity discrepancy check (aggregate meters)
       const machines = await tx.machine.findMany({
         where: { plantId: existing.plantId, isActive: true },
       });
@@ -223,7 +379,7 @@ export class ProductionService {
           electricityUnitsConsumed,
           totalKwhRating,
           SHIFT_HOURS,
-          input.metersProduced,
+          totalMetersProduced,
           totalExpectedOutput,
           ELECTRICITY_DISCREPANCY_THRESHOLD_PERCENT
         );
@@ -232,18 +388,16 @@ export class ProductionService {
         discrepancyNotes = discrepancyResult.notes || undefined;
       }
 
-      // 5. Update entry to COMPLETED
+      // Update entry to COMPLETED with aggregate totals
       const entry = await tx.productionEntry.update({
         where: { id },
         data: {
           status: ProductionStatus.COMPLETED,
-          metersProduced: input.metersProduced,
-          gramsPerMeter: new Prisma.Decimal(input.gramsPerMeter),
+          metersProduced: totalMetersProduced,
           electricityUnitsConsumed: new Prisma.Decimal(electricityUnitsConsumed),
           electricityEndReading: input.electricityEndReading != null
             ? new Prisma.Decimal(input.electricityEndReading)
             : undefined,
-          scrapWeightGrams: input.scrapWeightGrams ?? 0,
           hasElectricityDiscrepancy: hasDiscrepancy,
           electricityDiscrepancyNotes: discrepancyNotes,
           updatedBy: userId,
@@ -251,22 +405,23 @@ export class ProductionService {
         },
         include: {
           plant: { select: { id: true, name: true } },
-          variant: { select: { id: true, code: true, name: true } },
-          workers: { include: { worker: { select: { id: true, name: true } } } },
+          shiftVariants: {
+            include: { variant: { select: { id: true, code: true, name: true } } },
+          },
         },
       });
 
-      // 6. Audit log
+      // Audit log
       await auditService.log({
         entityType: 'ProductionEntry',
         entityId: entry.id,
         action: AuditAction.UPDATE,
-        newValue: { metersProduced: input.metersProduced, gramsConsumed, bagsConsumed, status: 'COMPLETED' },
-        changedFields: ['metersProduced', 'gramsPerMeter', 'electricityUnitsConsumed', 'scrapWeightGrams', 'status'],
+        newValue: { totalMetersProduced, variantCount: variantCompletions.length, status: 'COMPLETED' },
+        changedFields: ['metersProduced', 'electricityUnitsConsumed', 'status'],
         userId,
       });
 
-      // 7. Notify on discrepancy
+      // Notify on discrepancy
       if (hasDiscrepancy) {
         await notificationService.notifyRole({
           recipientRole: Role.SUPER_ADMIN,
@@ -278,21 +433,24 @@ export class ProductionService {
         });
       }
 
-      // 8. Low stock checks
-      await inventoryService.checkAndNotifyLowStock('raw_material', existing.variant.grainTypeId);
-      await inventoryService.checkAndNotifyLowStock('finished_goods', existing.variantId);
-
       return {
         id: entry.id,
         plant: entry.plant,
         shift: entry.shift,
         date: toISODate(entry.date),
-        variant: entry.variant,
+        shiftVariants: entry.shiftVariants.map((sv) => ({
+          id: sv.id,
+          variantId: sv.variantId,
+          variant: sv.variant,
+          metersProduced: sv.metersProduced,
+          gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
+          scrapWeightGrams: sv.scrapWeightGrams,
+        })),
         status: entry.status,
         metersProduced: entry.metersProduced,
         hasElectricityDiscrepancy: hasDiscrepancy,
-        rawMaterialConsumed: { gramsConsumed, bagsConsumed },
-        stockUpdate: { variantId: existing.variantId, newStockMeters: fgStock.currentMeters },
+        rawMaterialConsumed,
+        stockUpdates,
         version: entry.version,
       };
     });
@@ -306,13 +464,25 @@ export class ProductionService {
       where: { id, isDeleted: false },
       include: {
         plant: { select: { id: true, name: true } },
-        variant: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            standardGramsPerMeter: true,
-            grainType: { select: { id: true, name: true, bagWeightGrams: true } },
+        machine: { select: { id: true, identifier: true } },
+        shiftVariants: {
+          include: {
+            variant: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                standardGramsPerMeter: true,
+                grainType: { select: { id: true, name: true, bagWeightGrams: true } },
+                ingredients: {
+                  select: {
+                    ratioPercent: true,
+                    grainType: { select: { id: true, name: true, bagWeightGrams: true } },
+                  },
+                  orderBy: { ratioPercent: 'desc' },
+                },
+              },
+            },
           },
         },
         workers: { include: { worker: { select: { id: true, name: true } } } },
@@ -323,38 +493,34 @@ export class ProductionService {
       throw Object.assign(new Error('Production entry not found'), { statusCode: 404, code: 'NOT_FOUND' });
     }
 
-    let rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number } | null = null;
-    if (entry.metersProduced != null && entry.gramsPerMeter != null) {
-      const calc = calculateRawMaterialConsumption(
-        Number(entry.gramsPerMeter),
-        entry.metersProduced,
-        entry.variant.grainType.bagWeightGrams
-      );
-      rawMaterialConsumed = { grainType: entry.variant.grainType.name, ...calc };
-    }
-
     return {
       id: entry.id,
       plant: entry.plant,
+      machine: entry.machine,
       shift: entry.shift,
       date: toISODate(entry.date),
       status: entry.status,
-      variant: {
-        id: entry.variant.id,
-        code: entry.variant.code,
-        name: entry.variant.name,
-        standardGramsPerMeter: Number(entry.variant.standardGramsPerMeter),
-      },
+      shiftVariants: entry.shiftVariants.map((sv) => ({
+        id: sv.id,
+        variantId: sv.variantId,
+        variant: {
+          id: sv.variant.id,
+          code: sv.variant.code,
+          name: sv.variant.name,
+          standardGramsPerMeter: Number(sv.variant.standardGramsPerMeter),
+          grainType: sv.variant.grainType,
+        },
+        metersProduced: sv.metersProduced,
+        gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
+        scrapWeightGrams: sv.scrapWeightGrams,
+      })),
       metersProduced: entry.metersProduced,
-      gramsPerMeter: entry.gramsPerMeter != null ? Number(entry.gramsPerMeter) : null,
       electricityUnitsConsumed: entry.electricityUnitsConsumed != null ? Number(entry.electricityUnitsConsumed) : null,
       electricityStartReading: entry.electricityStartReading ? Number(entry.electricityStartReading) : null,
       electricityEndReading: entry.electricityEndReading ? Number(entry.electricityEndReading) : null,
       hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
       electricityDiscrepancyNotes: entry.electricityDiscrepancyNotes,
-      scrapWeightGrams: entry.scrapWeightGrams,
-      workers: entry.workers.map((w) => w.worker),
-      rawMaterialConsumed,
+      workers: entry.workers.map((w) => ({ ...w.worker, role: w.role })),
       createdBy: entry.createdBy,
       createdAt: entry.createdAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString(),
@@ -383,7 +549,8 @@ export class ProductionService {
       isDeleted: false,
       ...(plantId ? { plantId } : {}),
       ...(shift ? { shift } : {}),
-      ...(variantId ? { variantId } : {}),
+      // Filter by variantId via shiftVariants
+      ...(variantId ? { shiftVariants: { some: { variantId } } } : {}),
       ...(dateFrom || dateTo
         ? {
             date: {
@@ -402,13 +569,9 @@ export class ProductionService {
         orderBy: { [sortBy]: sortOrder },
         include: {
           plant: { select: { id: true, name: true } },
-          variant: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              grainType: { select: { name: true, bagWeightGrams: true } },
-            },
+          machine: { select: { id: true, identifier: true } },
+          shiftVariants: {
+            include: { variant: { select: { id: true, code: true, name: true } } },
           },
           workers: { include: { worker: { select: { id: true, name: true } } } },
         },
@@ -416,36 +579,29 @@ export class ProductionService {
       prisma.productionEntry.count({ where }),
     ]);
 
-    const data = entries.map((entry) => {
-      let rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number } | null = null;
-      if (entry.metersProduced != null && entry.gramsPerMeter != null) {
-        const calc = calculateRawMaterialConsumption(
-          Number(entry.gramsPerMeter),
-          entry.metersProduced,
-          entry.variant.grainType.bagWeightGrams
-        );
-        rawMaterialConsumed = { grainType: entry.variant.grainType.name, ...calc };
-      }
-
-      return {
-        id: entry.id,
-        plant: entry.plant,
-        shift: entry.shift,
-        date: toISODate(entry.date),
-        status: entry.status,
-        variant: { id: entry.variant.id, code: entry.variant.code, name: entry.variant.name },
-        metersProduced: entry.metersProduced,
-        gramsPerMeter: entry.gramsPerMeter != null ? Number(entry.gramsPerMeter) : null,
-        electricityUnitsConsumed: entry.electricityUnitsConsumed != null ? Number(entry.electricityUnitsConsumed) : null,
-        hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
-        scrapWeightGrams: entry.scrapWeightGrams,
-        workers: entry.workers.map((w) => w.worker),
-        rawMaterialConsumed,
-        createdBy: entry.createdBy,
-        createdAt: entry.createdAt.toISOString(),
-        version: entry.version,
-      };
-    });
+    const data = entries.map((entry) => ({
+      id: entry.id,
+      plant: entry.plant,
+      machine: entry.machine,
+      shift: entry.shift,
+      date: toISODate(entry.date),
+      status: entry.status,
+      shiftVariants: entry.shiftVariants.map((sv) => ({
+        id: sv.id,
+        variantId: sv.variantId,
+        variant: sv.variant,
+        metersProduced: sv.metersProduced,
+        gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
+        scrapWeightGrams: sv.scrapWeightGrams,
+      })),
+      metersProduced: entry.metersProduced,
+      electricityUnitsConsumed: entry.electricityUnitsConsumed != null ? Number(entry.electricityUnitsConsumed) : null,
+      hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
+      workers: entry.workers.map((w) => ({ ...w.worker, role: w.role })),
+      createdBy: entry.createdBy,
+      createdAt: entry.createdAt.toISOString(),
+      version: entry.version,
+    }));
 
     return {
       data,
@@ -462,7 +618,16 @@ export class ProductionService {
       const existing = await tx.productionEntry.findFirst({
         where: { id, isDeleted: false },
         include: {
-          variant: { include: { grainType: true } },
+          shiftVariants: {
+            include: {
+              variant: {
+                include: {
+                  grainType: true,
+                  ingredients: { include: { grainType: true } },
+                },
+              },
+            },
+          },
           workers: true,
         },
       });
@@ -480,75 +645,80 @@ export class ProductionService {
 
       const previousValue = {
         metersProduced: existing.metersProduced,
-        gramsPerMeter: Number(existing.gramsPerMeter),
         electricityUnitsConsumed: Number(existing.electricityUnitsConsumed),
-        scrapWeightGrams: existing.scrapWeightGrams,
       };
 
-      // Recalculate stock adjustments if meters or gramsPerMeter changed (only for COMPLETED entries)
+      // For single-variant completed entries, adjust stocks if meters/grams changed
       const newMeters = input.metersProduced ?? existing.metersProduced ?? 0;
-      const newGramsPerMeter = input.gramsPerMeter ?? (existing.gramsPerMeter != null ? Number(existing.gramsPerMeter) : 0);
-      const oldGramsPerMeter = existing.gramsPerMeter != null ? Number(existing.gramsPerMeter) : 0;
       const oldMeters = existing.metersProduced ?? 0;
-
-      let bagsDiff = 0;
       let metersDiff = 0;
+      let bagsDiff = 0;
 
-      if (existing.status === ProductionStatus.COMPLETED) {
-        const oldConsumption = calculateRawMaterialConsumption(
-          oldGramsPerMeter,
-          oldMeters,
-          existing.variant.grainType.bagWeightGrams
-        );
-        const newConsumption = calculateRawMaterialConsumption(
-          newGramsPerMeter,
-          newMeters,
-          existing.variant.grainType.bagWeightGrams
-        );
+      if (existing.status === ProductionStatus.COMPLETED && existing.shiftVariants.length === 1) {
+        const sv = existing.shiftVariants[0];
+        const oldGramsPerMeter = sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : 0;
+        const newGramsPerMeter = input.gramsPerMeter ?? oldGramsPerMeter;
+
+        const primaryGrain = sv.variant.ingredients[0]?.grainType ?? sv.variant.grainType;
+        if (!primaryGrain) throw Object.assign(new Error('Variant has no grain configured'), { statusCode: 422 });
+
+        const oldConsumption = calculateRawMaterialConsumption(oldGramsPerMeter, oldMeters, primaryGrain.bagWeightGrams);
+        const newConsumption = calculateRawMaterialConsumption(newGramsPerMeter, newMeters, primaryGrain.bagWeightGrams);
 
         bagsDiff = newConsumption.bagsConsumed - oldConsumption.bagsConsumed;
         metersDiff = newMeters - oldMeters;
-      }
 
-      // Adjust raw material stock
-      if (Math.abs(bagsDiff) > 0.0001) {
-        const rawMaterialStock = await tx.rawMaterialStock.findUnique({
-          where: { grainTypeId: existing.variant.grainTypeId },
-        });
+        if (Math.abs(bagsDiff) > 0.0001) {
+          // Adjust all ingredient stocks proportionally
+          const ingredientList = sv.variant.ingredients.length > 0
+            ? sv.variant.ingredients.map((ing) => ({ grainTypeId: ing.grainTypeId, ratioPercent: Number(ing.ratioPercent) }))
+            : [{ grainTypeId: sv.variant.grainTypeId!, ratioPercent: 100 }];
 
-        if (rawMaterialStock) {
-          const newBags = Number(rawMaterialStock.currentBags) - bagsDiff;
-          if (newBags < 0) {
-            throw Object.assign(
-              new Error('Insufficient raw material stock for this update'),
-              { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
-            );
+          for (const ing of ingredientList) {
+            const ingBagsDiff = bagsDiff * (ing.ratioPercent / 100);
+            const rawMaterialStock = await tx.rawMaterialStock.findUnique({ where: { grainTypeId: ing.grainTypeId } });
+            if (rawMaterialStock) {
+              const newBags = Number(rawMaterialStock.currentBags) - ingBagsDiff;
+              if (newBags < 0) {
+                throw Object.assign(new Error('Insufficient raw material stock for this update'), { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' });
+              }
+              await tx.rawMaterialStock.update({
+                where: { id: rawMaterialStock.id },
+                data: { currentBags: new Prisma.Decimal(newBags), updatedBy: userId },
+              });
+            }
           }
-          await tx.rawMaterialStock.update({
-            where: { id: rawMaterialStock.id },
-            data: { currentBags: new Prisma.Decimal(newBags), updatedBy: userId },
+        }
+
+        if (metersDiff !== 0) {
+          await tx.finishedGoodsStock.update({
+            where: { variantId: sv.variantId },
+            data: { currentMeters: { increment: metersDiff }, updatedBy: userId },
           });
         }
-      }
 
-      // Adjust finished goods stock
-      if (metersDiff !== 0) {
-        await tx.finishedGoodsStock.update({
-          where: { variantId: existing.variantId },
-          data: { currentMeters: { increment: metersDiff }, updatedBy: userId },
-        });
+        // Update single ShiftVariant with new meters/grams/scrap
+        if (input.metersProduced != null || input.gramsPerMeter != null || input.scrapWeightGrams != null) {
+          await tx.productionShiftVariant.update({
+            where: { entryId_variantId: { entryId: id, variantId: sv.variantId } },
+            data: {
+              ...(input.metersProduced != null ? { metersProduced: input.metersProduced } : {}),
+              ...(input.gramsPerMeter != null ? { gramsPerMeter: new Prisma.Decimal(input.gramsPerMeter) } : {}),
+              ...(input.scrapWeightGrams != null ? { scrapWeightGrams: input.scrapWeightGrams } : {}),
+            },
+          });
+        }
       }
 
       // Re-check electricity discrepancy
       let hasDiscrepancy = existing.hasElectricityDiscrepancy;
       let discrepancyNotes = existing.electricityDiscrepancyNotes;
       const newElectricity = input.electricityUnitsConsumed ?? (existing.electricityUnitsConsumed != null ? Number(existing.electricityUnitsConsumed) : 0);
+      const effectiveMeters = input.metersProduced ?? existing.metersProduced ?? 0;
 
-      const machines = await tx.machine.findMany({
-        where: { plantId: existing.plantId, isActive: true },
-      });
+      const machines = await tx.machine.findMany({ where: { plantId: existing.plantId, isActive: true } });
 
-      if (machines.length > 0 && newElectricity > 0 && newMeters > 0) {
+      if (machines.length > 0 && newElectricity > 0 && effectiveMeters > 0) {
         const totalKwhRating = machines.reduce((sum, m) => sum + Number(m.kwhRating), 0);
         const totalExpectedOutput = machines.reduce((sum, m) => sum + m.expectedOutputPerShift, 0);
 
@@ -556,7 +726,7 @@ export class ProductionService {
           newElectricity,
           totalKwhRating,
           SHIFT_HOURS,
-          newMeters,
+          effectiveMeters,
           totalExpectedOutput,
           ELECTRICITY_DISCREPANCY_THRESHOLD_PERCENT
         );
@@ -566,11 +736,12 @@ export class ProductionService {
       }
 
       // Update workers if provided
-      if (input.workerIds) {
+      const workerAssignments: WorkerAssignment[] | null = input.workers ?? (input.workerIds ? input.workerIds.map((id) => ({ workerId: id })) : null);
+      if (workerAssignments) {
         await tx.productionEntryWorker.deleteMany({ where: { productionEntryId: id } });
-        if (input.workerIds.length > 0) {
+        if (workerAssignments.length > 0) {
           await tx.productionEntryWorker.createMany({
-            data: input.workerIds.map((workerId) => ({ productionEntryId: id, workerId })),
+            data: workerAssignments.map(({ workerId, role }) => ({ productionEntryId: id, workerId, role: role ?? null })),
           });
         }
       }
@@ -580,7 +751,6 @@ export class ProductionService {
         where: { id },
         data: {
           ...(input.metersProduced != null ? { metersProduced: input.metersProduced } : {}),
-          ...(input.gramsPerMeter != null ? { gramsPerMeter: new Prisma.Decimal(input.gramsPerMeter) } : {}),
           ...(input.electricityUnitsConsumed != null
             ? { electricityUnitsConsumed: new Prisma.Decimal(input.electricityUnitsConsumed) }
             : {}),
@@ -590,7 +760,6 @@ export class ProductionService {
           ...(input.electricityEndReading !== undefined
             ? { electricityEndReading: input.electricityEndReading != null ? new Prisma.Decimal(input.electricityEndReading) : null }
             : {}),
-          ...(input.scrapWeightGrams != null ? { scrapWeightGrams: input.scrapWeightGrams } : {}),
           hasElectricityDiscrepancy: hasDiscrepancy,
           electricityDiscrepancyNotes: discrepancyNotes,
           updatedBy: userId,
@@ -598,12 +767,12 @@ export class ProductionService {
         },
         include: {
           plant: { select: { id: true, name: true } },
-          variant: { select: { id: true, code: true, name: true } },
+          machine: { select: { id: true, identifier: true } },
+          shiftVariants: { include: { variant: { select: { id: true, code: true, name: true } } } },
           workers: { include: { worker: { select: { id: true, name: true } } } },
         },
       });
 
-      // Audit
       const changedFields = Object.keys(input).filter((k) => input[k as keyof UpdateProductionEntryInput] !== undefined);
       await auditService.log({
         entityType: 'ProductionEntry',
@@ -612,9 +781,7 @@ export class ProductionService {
         previousValue,
         newValue: {
           metersProduced: updated.metersProduced,
-          gramsPerMeter: Number(updated.gramsPerMeter),
           electricityUnitsConsumed: Number(updated.electricityUnitsConsumed),
-          scrapWeightGrams: updated.scrapWeightGrams,
         },
         changedFields,
         userId,
@@ -623,12 +790,20 @@ export class ProductionService {
       return {
         id: updated.id,
         plant: updated.plant,
+        machine: updated.machine,
         shift: updated.shift,
         date: toISODate(updated.date),
-        variant: updated.variant,
+        shiftVariants: updated.shiftVariants.map((sv) => ({
+          id: sv.id,
+          variantId: sv.variantId,
+          variant: sv.variant,
+          metersProduced: sv.metersProduced,
+          gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
+          scrapWeightGrams: sv.scrapWeightGrams,
+        })),
         metersProduced: updated.metersProduced,
         hasElectricityDiscrepancy: updated.hasElectricityDiscrepancy,
-        workers: updated.workers.map((w) => w.worker),
+        workers: updated.workers.map((w) => ({ ...w.worker, role: w.role })),
         version: updated.version,
       };
     });
@@ -651,7 +826,7 @@ export class ProductionService {
       where,
       include: {
         plant: { select: { id: true, name: true } },
-        variant: { select: { id: true, code: true, name: true } },
+        shiftVariants: { include: { variant: { select: { id: true, code: true, name: true } } } },
         workers: { include: { worker: { select: { id: true, name: true } } } },
       },
       orderBy: [{ plantId: 'asc' }, { shift: 'asc' }],
@@ -679,17 +854,22 @@ export class ProductionService {
         if (shiftEntries.length === 0) return null;
 
         const metersProduced = shiftEntries.reduce((sum, e) => sum + (e.metersProduced ?? 0), 0);
-        const variants = shiftEntries.map((e) => ({
-          code: e.variant.code,
-          name: e.variant.name,
-          meters: e.metersProduced ?? 0,
-        }));
+        // Build variants from shiftVariants (multi-variant aware)
+        const variants = shiftEntries.flatMap((e) =>
+          e.shiftVariants.map((sv) => ({
+            code: sv.variant.code,
+            name: sv.variant.name,
+            meters: sv.metersProduced,
+          }))
+        );
         const electricityUnits = shiftEntries.reduce((sum, e) => sum + (e.electricityUnitsConsumed != null ? Number(e.electricityUnitsConsumed) : 0), 0);
         const scrapGrams = shiftEntries.reduce((sum, e) => sum + (e.scrapWeightGrams ?? 0), 0);
-        const workersSet = new Set<string>();
+        const workersMap = new Map<string, { name: string; role: string | null }>();
         for (const e of shiftEntries) {
           for (const w of e.workers) {
-            workersSet.add(w.worker.name);
+            if (!workersMap.has(w.worker.id)) {
+              workersMap.set(w.worker.id, { name: w.worker.name, role: w.role });
+            }
           }
         }
         const hasDiscrepancy = shiftEntries.some((e) => e.hasElectricityDiscrepancy);
@@ -699,7 +879,7 @@ export class ProductionService {
           variants,
           electricityUnits: Math.round(electricityUnits * 100) / 100,
           scrapGrams,
-          workers: Array.from(workersSet),
+          workers: Array.from(workersMap.values()),
           hasDiscrepancy,
         };
       };
@@ -893,7 +1073,7 @@ export class ProductionService {
         orderBy: { date: 'desc' },
         include: {
           plant: { select: { id: true, name: true } },
-          variant: { select: { id: true, code: true, name: true } },
+          shiftVariants: { include: { variant: { select: { id: true, code: true, name: true } } } },
         },
       }),
       prisma.productionEntry.count({ where }),
@@ -904,7 +1084,7 @@ export class ProductionService {
       plant: entry.plant,
       shift: entry.shift,
       date: toISODate(entry.date),
-      variant: entry.variant,
+      variant: entry.shiftVariants.map(sv => sv.variant),
       metersProduced: entry.metersProduced,
       electricityUnitsConsumed: Number(entry.electricityUnitsConsumed),
       hasElectricityDiscrepancy: entry.hasElectricityDiscrepancy,
@@ -920,7 +1100,16 @@ export class ProductionService {
   async getPlants() {
     return prisma.plant.findMany({
       where: { isDeleted: false },
-      select: { id: true, name: true, location: true },
+      select: {
+        id: true,
+        name: true,
+        location: true,
+        machines: {
+          where: { isActive: true },
+          select: { id: true, identifier: true, kwhRating: true, expectedOutputPerShift: true },
+          orderBy: { identifier: 'asc' },
+        },
+      },
       orderBy: { name: 'asc' },
     });
   }

@@ -98,7 +98,7 @@ export function ProductionEntries() {
       header: 'Variant',
       sortable: true,
       hideOnMobile: true,
-      render: (row) => row.variant.name,
+      render: (row) => row.shiftVariants.map((sv) => sv.variant.code).join(', '),
     },
     {
       key: 'metersProduced',
@@ -166,7 +166,7 @@ export function ProductionEntries() {
       </div>
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-500">{row.plant.name}</span>
-        <span className="font-medium">{row.variant.name}</span>
+        <span className="font-medium">{row.shiftVariants.map((sv) => sv.variant.code).join(', ')}</span>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
         <div>
@@ -174,8 +174,8 @@ export function ProductionEntries() {
           {row.metersProduced != null ? row.metersProduced.toLocaleString() : '—'}
         </div>
         <div>
-          <span className="block text-gray-400">Scrap</span>
-          {row.scrapWeightGrams ? row.scrapWeightGrams.toLocaleString() + 'g' : '—'}
+          <span className="block text-gray-400">Variants</span>
+          {row.shiftVariants.length}
         </div>
       </div>
     </div>

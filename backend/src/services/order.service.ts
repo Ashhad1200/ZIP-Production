@@ -10,11 +10,15 @@ import { stripFinancialFields, stripFinancialFieldsFromList } from '../utils/ser
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
-interface CreateOrderInput {
-  clientId: string;
+interface LineItemInput {
   variantId: string;
   metersOrdered: number;
   ratePerMeterPaisa: number;
+}
+
+interface CreateOrderInput {
+  clientId: string;
+  lineItems: LineItemInput[];
   deliveryDeadline: string; // YYYY-MM-DD
 }
 
@@ -56,23 +60,47 @@ export class OrderService {
       });
     }
 
-    // 2. Validate variant exists
-    const variant = await prisma.zipperVariant.findUnique({
-      where: { id: input.variantId, isDeleted: false },
-      select: { id: true, code: true, name: true },
-    });
-    if (!variant) {
-      throw Object.assign(new Error('Variant not found'), {
-        statusCode: 404,
-        code: 'VARIANT_NOT_FOUND',
+    // 2. Validate line items
+    if (!input.lineItems || input.lineItems.length === 0) {
+      throw Object.assign(new Error('At least one line item is required'), {
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     }
 
-    // 3. Validate rate
-    if (input.ratePerMeterPaisa <= 0) {
-      throw Object.assign(new Error('Rate per meter must be greater than zero'), {
-        statusCode: 422,
-        code: 'INVALID_RATE',
+    // 3. Validate each line item's variant, rate, and meters
+    const resolvedItems: Array<{ variantId: string; variantName: string; metersOrdered: number; ratePerMeterPaisa: bigint; lineAmountPaisa: bigint }> = [];
+
+    for (const item of input.lineItems) {
+      const variant = await prisma.zipperVariant.findUnique({
+        where: { id: item.variantId, isDeleted: false },
+        select: { id: true, code: true, name: true },
+      });
+      if (!variant) {
+        throw Object.assign(new Error(`Variant not found: ${item.variantId}`), {
+          statusCode: 404,
+          code: 'VARIANT_NOT_FOUND',
+        });
+      }
+      if (item.ratePerMeterPaisa <= 0) {
+        throw Object.assign(new Error(`Rate for variant ${variant.code} must be greater than zero`), {
+          statusCode: 422,
+          code: 'INVALID_RATE',
+        });
+      }
+      if (item.metersOrdered <= 0) {
+        throw Object.assign(new Error(`Meters for variant ${variant.code} must be greater than zero`), {
+          statusCode: 422,
+          code: 'INVALID_METERS',
+        });
+      }
+      const lineAmountPaisa = BigInt(item.metersOrdered) * BigInt(item.ratePerMeterPaisa);
+      resolvedItems.push({
+        variantId: item.variantId,
+        variantName: variant.name,
+        metersOrdered: item.metersOrdered,
+        ratePerMeterPaisa: BigInt(item.ratePerMeterPaisa),
+        lineAmountPaisa,
       });
     }
 
@@ -85,36 +113,51 @@ export class OrderService {
       });
     }
 
-    // 5. Calculate total
-    const totalAmountPaisa = BigInt(input.metersOrdered) * BigInt(input.ratePerMeterPaisa);
+    // 5. Compute aggregates
+    const totalMetersOrdered = resolvedItems.reduce((sum, li) => sum + li.metersOrdered, 0);
+    const totalAmountPaisa = resolvedItems.reduce((sum, li) => sum + li.lineAmountPaisa, BigInt(0));
 
     // 6. Generate order number
     const orderNumber = await generateSequenceNumber('ORD', 'order');
 
-    // 7. Create order — starts as PENDING_APPROVAL (finance must approve)
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        clientId: input.clientId,
-        variantId: input.variantId,
-        metersOrdered: input.metersOrdered,
-        ratePerMeterPaisa: BigInt(input.ratePerMeterPaisa),
-        totalAmountPaisa,
-        deliveryDeadline: deadline,
-        status: OrderStatus.PENDING_APPROVAL,
-        createdBy: userId,
-      },
+    // 7. Create order + line items in a transaction
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          orderNumber,
+          clientId: input.clientId,
+          metersOrdered: totalMetersOrdered,
+          totalAmountPaisa,
+          deliveryDeadline: deadline,
+          status: OrderStatus.PENDING_APPROVAL,
+          createdBy: userId,
+        },
+      });
+
+      for (const li of resolvedItems) {
+        await tx.orderLineItem.create({
+          data: {
+            orderId: created.id,
+            variantId: li.variantId,
+            metersOrdered: li.metersOrdered,
+            ratePerMeterPaisa: li.ratePerMeterPaisa,
+          },
+        });
+      }
+
+      return created;
     });
 
     // 8. Calculate client outstanding
     const clientOutstandingPaisa = await this.getClientOutstanding(input.clientId);
 
-    // 9. Notify FINANCE_HEAD to approve (not production yet)
+    // 9. Notify FINANCE_HEAD to approve
+    const variantNames = resolvedItems.map((li) => li.variantName).join(', ');
     await notificationService.notifyRole({
       recipientRole: Role.FINANCE_HEAD,
       type: NotificationType.ORDER_CREATED,
       title: 'New Order Awaiting Approval',
-      message: `Order ${orderNumber}: ${client.name} ordered ${input.metersOrdered}m of ${variant.name}. Deadline: ${formatDatePKT(deadline)}. Please review and approve.`,
+      message: `Order ${orderNumber}: ${client.name} ordered ${totalMetersOrdered}m of ${variantNames}. Deadline: ${formatDatePKT(deadline)}. Please review and approve.`,
       referenceType: 'Order',
       referenceId: order.id,
     });
@@ -127,9 +170,11 @@ export class OrderService {
       newValue: {
         orderNumber,
         clientId: input.clientId,
-        variantId: input.variantId,
-        metersOrdered: input.metersOrdered,
-        ratePerMeterPaisa: input.ratePerMeterPaisa,
+        lineItems: resolvedItems.map((li) => ({
+          variantId: li.variantId,
+          metersOrdered: li.metersOrdered,
+          ratePerMeterPaisa: li.ratePerMeterPaisa.toString(),
+        })),
         totalAmountPaisa: totalAmountPaisa.toString(),
         deliveryDeadline: input.deliveryDeadline,
       },
@@ -174,7 +219,7 @@ export class OrderService {
     }
 
     if (params.clientId) where.clientId = params.clientId;
-    if (params.variantId) where.variantId = params.variantId;
+    if (params.variantId) where.lineItems = { some: { variantId: params.variantId } };
 
     if (params.dateFrom || params.dateTo) {
       where.createdAt = {};
@@ -202,7 +247,16 @@ export class OrderService {
         orderBy,
         include: {
           client: { select: { id: true, name: true } },
-          variant: { select: { id: true, code: true, name: true } },
+          lineItems: {
+            select: {
+              id: true,
+              variantId: true,
+              variant: { select: { id: true, code: true, name: true } },
+              metersOrdered: true,
+              metersDelivered: true,
+              ratePerMeterPaisa: true,
+            },
+          },
         },
       }),
       prisma.order.count({ where }),
@@ -214,15 +268,23 @@ export class OrderService {
         id: order.id,
         orderNumber: order.orderNumber,
         client: order.client,
-        variant: order.variant,
+        lineItems: order.lineItems.map((li) => ({
+          id: li.id,
+          variantId: li.variantId,
+          variant: li.variant,
+          metersOrdered: li.metersOrdered,
+          metersDelivered: li.metersDelivered,
+          ratePerMeterPaisa: li.ratePerMeterPaisa.toString(),
+          ratePerMeterDisplay: formatPaisaToRupees(li.ratePerMeterPaisa),
+        })),
         metersOrdered: order.metersOrdered,
         metersDelivered: order.metersDelivered,
-        fulfillmentPercent: Math.round((order.metersDelivered / order.metersOrdered) * 100),
+        fulfillmentPercent: order.metersOrdered > 0
+          ? Math.round((order.metersDelivered / order.metersOrdered) * 100)
+          : 0,
         isOverdue: order.status !== OrderStatus.COMPLETED && order.deliveryDeadline < now,
         deliveryDeadline: order.deliveryDeadline.toISOString().split('T')[0],
         status: order.status,
-        ratePerMeterPaisa: order.ratePerMeterPaisa.toString(),
-        ratePerMeterDisplay: formatPaisaToRupees(order.ratePerMeterPaisa),
         totalAmountPaisa: order.totalAmountPaisa.toString(),
         totalAmountDisplay: formatPaisaToRupees(order.totalAmountPaisa),
         createdAt: order.createdAt.toISOString(),
@@ -252,7 +314,34 @@ export class OrderService {
       where: { id, isDeleted: false },
       include: {
         client: { select: { id: true, name: true } },
-        variant: { select: { id: true, code: true, name: true } },
+        lineItems: {
+          select: {
+            id: true,
+            variantId: true,
+            variant: { select: { id: true, code: true, name: true } },
+            metersOrdered: true,
+            metersDelivered: true,
+            ratePerMeterPaisa: true,
+          },
+        },
+        gatePasses: {
+          where: { isDeleted: false },
+          orderBy: { date: 'asc' },
+          select: {
+            id: true,
+            gatePassNumber: true,
+            date: true,
+            status: true,
+            totalAmountPaisa: true,
+            lineItems: {
+              select: {
+                id: true,
+                meters: true,
+                variant: { select: { id: true, code: true, name: true } },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -270,15 +359,36 @@ export class OrderService {
       id: order.id,
       orderNumber: order.orderNumber,
       client: order.client,
-      variant: order.variant,
+      lineItems: order.lineItems.map((li) => ({
+        id: li.id,
+        variantId: li.variantId,
+        variant: li.variant,
+        metersOrdered: li.metersOrdered,
+        metersDelivered: li.metersDelivered,
+        ratePerMeterPaisa: li.ratePerMeterPaisa.toString(),
+        ratePerMeterDisplay: formatPaisaToRupees(li.ratePerMeterPaisa),
+      })),
+      deliveries: order.gatePasses.map((gp) => ({
+        id: gp.id,
+        gatePassNumber: gp.gatePassNumber,
+        date: gp.date.toISOString().split('T')[0],
+        status: gp.status,
+        totalAmountPaisa: gp.totalAmountPaisa.toString(),
+        totalAmountDisplay: formatPaisaToRupees(gp.totalAmountPaisa),
+        lineItems: gp.lineItems.map((li) => ({
+          id: li.id,
+          meters: li.meters,
+          variant: li.variant,
+        })),
+      })),
       metersOrdered: order.metersOrdered,
       metersDelivered: order.metersDelivered,
-      fulfillmentPercent: Math.round((order.metersDelivered / order.metersOrdered) * 100),
+      fulfillmentPercent: order.metersOrdered > 0
+        ? Math.round((order.metersDelivered / order.metersOrdered) * 100)
+        : 0,
       isOverdue: order.status !== OrderStatus.COMPLETED && order.deliveryDeadline < now,
       deliveryDeadline: order.deliveryDeadline.toISOString().split('T')[0],
       status: order.status,
-      ratePerMeterPaisa: order.ratePerMeterPaisa.toString(),
-      ratePerMeterDisplay: formatPaisaToRupees(order.ratePerMeterPaisa),
       totalAmountPaisa: order.totalAmountPaisa.toString(),
       totalAmountDisplay: formatPaisaToRupees(order.totalAmountPaisa),
       clientOutstandingPaisa: clientOutstandingPaisa.toString(),
@@ -301,7 +411,16 @@ export class OrderService {
       orderBy: { createdAt: 'desc' },
       include: {
         client: { select: { id: true, name: true } },
-        variant: { select: { id: true, code: true, name: true } },
+        lineItems: {
+          select: {
+            id: true,
+            variantId: true,
+            variant: { select: { id: true, code: true, name: true } },
+            metersOrdered: true,
+            metersDelivered: true,
+            ratePerMeterPaisa: true,
+          },
+        },
       },
     });
 
@@ -311,15 +430,23 @@ export class OrderService {
         id: order.id,
         orderNumber: order.orderNumber,
         client: order.client,
-        variant: order.variant,
+        lineItems: order.lineItems.map((li) => ({
+          id: li.id,
+          variantId: li.variantId,
+          variant: li.variant,
+          metersOrdered: li.metersOrdered,
+          metersDelivered: li.metersDelivered,
+          ratePerMeterPaisa: li.ratePerMeterPaisa.toString(),
+          ratePerMeterDisplay: formatPaisaToRupees(li.ratePerMeterPaisa),
+        })),
         metersOrdered: order.metersOrdered,
         metersDelivered: order.metersDelivered,
-        fulfillmentPercent: Math.round((order.metersDelivered / order.metersOrdered) * 100),
+        fulfillmentPercent: order.metersOrdered > 0
+          ? Math.round((order.metersDelivered / order.metersOrdered) * 100)
+          : 0,
         isOverdue: order.status !== OrderStatus.COMPLETED && order.deliveryDeadline < now,
         deliveryDeadline: order.deliveryDeadline.toISOString().split('T')[0],
         status: order.status,
-        ratePerMeterPaisa: order.ratePerMeterPaisa.toString(),
-        ratePerMeterDisplay: formatPaisaToRupees(order.ratePerMeterPaisa),
         totalAmountPaisa: order.totalAmountPaisa.toString(),
         totalAmountDisplay: formatPaisaToRupees(order.totalAmountPaisa),
         createdAt: order.createdAt.toISOString(),
@@ -341,7 +468,11 @@ export class OrderService {
       where: { isDeleted: false },
       include: {
         client: { select: { id: true, name: true } },
-        variant: { select: { id: true, code: true, name: true } },
+        lineItems: {
+          select: {
+            variant: { select: { code: true } },
+          },
+        },
       },
       orderBy: { deliveryDeadline: 'asc' },
     });
@@ -366,10 +497,12 @@ export class OrderService {
       return {
         orderNumber: order.orderNumber,
         clientName: order.client.name,
-        variantCode: order.variant.code,
+        variantCode: order.lineItems.map((li) => li.variant.code).join(', '),
         metersOrdered: order.metersOrdered,
         metersDelivered: order.metersDelivered,
-        fulfillmentPercent: Math.round((order.metersDelivered / order.metersOrdered) * 100),
+        fulfillmentPercent: order.metersOrdered > 0
+          ? Math.round((order.metersDelivered / order.metersOrdered) * 100)
+          : 0,
         deliveryDeadline: order.deliveryDeadline.toISOString().split('T')[0],
         status: order.status,
         daysRemaining,
@@ -394,7 +527,10 @@ export class OrderService {
   async approveOrder(id: string, userId: string) {
     const order = await prisma.order.findUnique({
       where: { id, isDeleted: false },
-      include: { client: true, variant: true },
+      include: {
+        client: true,
+        lineItems: { include: { variant: { select: { name: true } } } },
+      },
     });
     if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
     if (order.status !== OrderStatus.PENDING_APPROVAL) {
@@ -406,11 +542,12 @@ export class OrderService {
       data: { status: OrderStatus.PENDING, updatedBy: userId, version: { increment: 1 } },
     });
 
+    const variantNames = order.lineItems.map((li) => li.variant.name).join(', ');
     await notificationService.notifyRole({
       recipientRole: Role.PRODUCTION_HEAD,
       type: NotificationType.ORDER_CREATED,
       title: 'Order Approved — Ready for Production',
-      message: `Order ${order.orderNumber}: ${order.client.name} ordered ${order.metersOrdered}m of ${order.variant.name}. Deadline: ${formatDatePKT(order.deliveryDeadline)}.`,
+      message: `Order ${order.orderNumber}: ${order.client.name} ordered ${order.metersOrdered}m of ${variantNames}. Deadline: ${formatDatePKT(order.deliveryDeadline)}.`,
       referenceType: 'Order',
       referenceId: order.id,
     });

@@ -5,6 +5,7 @@ import {
   Factory,
   Package,
   Truck,
+  RotateCcw,
   ClipboardList,
   DollarSign,
   Settings,
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   UserCheck,
+  TrendingDown,
 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 import { ROLES } from '../../utils/constants';
@@ -36,6 +38,12 @@ const navItems: NavItem[] = [
     path: '/production',
     icon: <Factory size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD],
+  },
+  {
+    label: 'Cost Price',
+    path: '/cost-price',
+    icon: <TrendingDown size={20} />,
+    roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
   },
   {
     label: 'Inventory',
@@ -63,6 +71,16 @@ const navItems: NavItem[] = [
         path: '/inventory/consumption-report',
         roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD],
       },
+      {
+        label: 'FIFO Batches',
+        path: '/inventory/batches',
+        roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+      },
+      {
+        label: 'Electricity Rates',
+        path: '/inventory/electricity-rates',
+        roles: [ROLES.SUPER_ADMIN],
+      },
     ],
   },
   {
@@ -70,6 +88,12 @@ const navItems: NavItem[] = [
     path: '/gate-pass',
     icon: <Truck size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.LOGISTICS_HEAD],
+  },
+  {
+    label: 'Sales Returns',
+    path: '/sales-returns',
+    icon: <RotateCcw size={20} />,
+    roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD],
   },
   {
     label: 'Orders',

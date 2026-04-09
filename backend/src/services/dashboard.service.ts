@@ -510,7 +510,7 @@ export class DashboardService {
           createdAt: true,
           createdBy: true,
           plant: { select: { name: true } },
-          variant: { select: { code: true } },
+          shiftVariants: { select: { variant: { select: { code: true } } } },
         },
       }),
     ]);
@@ -570,7 +570,7 @@ export class DashboardService {
       activities.push({
         id: pe.id,
         type: 'PRODUCTION',
-        title: `Production ${pe.variant.code}`,
+        title: `Production ${pe.shiftVariants.map(sv => sv.variant.code).join(', ') || '—'}`,
         description: `${pe.plant.name} — ${pe.shift} shift — ${pe.metersProduced}m`,
         timestamp: pe.createdAt.toISOString(),
         actor: pe.createdBy,

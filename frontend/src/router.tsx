@@ -26,6 +26,9 @@ const GatePassPage = React.lazy(
 const VerifyGatePassPage = React.lazy(() =>
   import('./pages/GatePass/VerifyGatePass').then((m) => ({ default: m.VerifyGatePass })),
 );
+const SalesReturnPage = React.lazy(() =>
+  import('./pages/GatePass/SalesReturnPage').then((m) => ({ default: m.SalesReturnPage })),
+);
 const OrdersPage = React.lazy(() => import('./pages/Orders/OrdersPage'));
 const FinancePage = React.lazy(() => import('./pages/Finance/FinancePage'));
 const ClientLedgerPage = React.lazy(
@@ -40,6 +43,9 @@ const SettingsPage = React.lazy(
 );
 const HRPage = React.lazy(() => import('./pages/HR/HRPage'));
 const VerifyPage = React.lazy(() => import('./pages/Verify/VerifyPage'));
+const CostPriceReportPage = React.lazy(() =>
+  import('./pages/Production/CostPriceReport').then((m) => ({ default: m.CostPriceReport })),
+);
 const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
 
 // --------------- Guards ---------------
@@ -133,6 +139,14 @@ export const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'cost-price',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD]}>
+            <Lazy element={CostPriceReportPage} />
+          </RoleGuard>
+        ),
+      },
+      {
         path: 'inventory/*',
         element: (
           <RoleGuard
@@ -152,6 +166,14 @@ export const routes: RouteObject[] = [
         element: (
           <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.LOGISTICS_HEAD]}>
             <Lazy element={GatePassPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'sales-returns',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD]}>
+            <Lazy element={SalesReturnPage} />
           </RoleGuard>
         ),
       },

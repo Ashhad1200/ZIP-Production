@@ -5,20 +5,18 @@ import { Play, Loader2 } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { DatePicker } from '../../components/forms/DatePicker';
 import { SearchableSelect } from '../../components/forms/SearchableSelect';
-import { WorkerMultiSelect } from '../../components/forms/WorkerMultiSelect';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { toISODate } from '../../utils/date';
 import {
   productionApi,
   type Shift,
   type CreateProductionEntryPayload,
+  type WorkerAssignmentPayload,
 } from '../../services/production.api';
 
 interface FormErrors {
   plantId?: string;
-  shift?: string;
   date?: string;
-  workerIds?: string;
   variantId?: string;
   electricityStart?: string;
 }
@@ -29,9 +27,11 @@ export function ProductionEntryForm() {
 
   // ── Form state ───────────────────────────────────────────────────────────
   const [plantId, setPlantId] = useState('');
+  const [machineId, setMachineId] = useState('');
   const [shift, setShift] = useState<Shift>('DAY');
   const [date, setDate] = useState(toISODate(new Date()));
-  const [workerIds, setWorkerIds] = useState<string[]>([]);
+  const [headOperatorId, setHeadOperatorId] = useState('');
+  const [assistantId, setAssistantId] = useState('');
   const [variantId, setVariantId] = useState('');
   const [electricityStart, setElectricityStart] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
@@ -43,6 +43,9 @@ export function ProductionEntryForm() {
     queryFn: productionApi.getPlants,
   });
   const plants = plantsResp?.data ?? [];
+
+  const selectedPlant = plants.find((p) => p.id === plantId);
+  const machines = selectedPlant?.machines ?? [];
 
   const { data: workersResp, isLoading: workersLoading } = useQuery({
     queryKey: ['workers', plantId],
@@ -64,10 +67,17 @@ export function ProductionEntryForm() {
     }
   }, [plants, plantId]);
 
-  // ── Reset workers when plant changes ─────────────────────────────────────
   useEffect(() => {
-    setWorkerIds([]);
+    setMachineId('');
+    setHeadOperatorId('');
+    setAssistantId('');
   }, [plantId]);
+
+  useEffect(() => {
+    if (machines.length === 1 && machines[0] && !machineId) {
+      setMachineId(machines[0].id);
+    }
+  }, [machines, machineId]);
 
   // ── Validation ───────────────────────────────────────────────────────────
   const validate = useCallback((): boolean => {
@@ -96,17 +106,22 @@ export function ProductionEntryForm() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+
+    const workerAssignments: WorkerAssignmentPayload[] = [];
+    if (headOperatorId) workerAssignments.push({ workerId: headOperatorId, role: 'HEAD_OPERATOR' });
+    if (assistantId) workerAssignments.push({ workerId: assistantId, role: 'ASSISTANT' });
+
     mutation.mutate({
       plantId,
+      machineId: machineId || undefined,
       shift,
       date,
-      workerIds: workerIds.length > 0 ? workerIds : undefined,
       variantId,
       electricityStartReading: electricityStart ? Number(electricityStart) : undefined,
+      workers: workerAssignments.length > 0 ? workerAssignments : undefined,
     });
   };
 
-  // ── Toast auto-dismiss ───────────────────────────────────────────────────
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 4000);
@@ -115,17 +130,17 @@ export function ProductionEntryForm() {
 
   if (plantsLoading || variantsLoading) return <LoadingSpinner />;
 
+  const workerOptions = workers.map((w) => ({ value: w.id, label: w.name + (w.designation ? ` (${w.designation})` : '') }));
+
   return (
     <div className="mx-auto max-w-2xl">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Start Production</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Record shift start. You'll enter meters, grams, and scrap when the shift is complete.
+          Record a single variant run. Start another entry for the next variant.
         </p>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div
           className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
@@ -175,6 +190,17 @@ export function ProductionEntryForm() {
           </div>
         </div>
 
+        {/* Machine */}
+        {plantId && machines.length > 0 && (
+          <SearchableSelect
+            label="Machine (optional)"
+            options={machines.map((m) => ({ value: m.id, label: m.identifier }))}
+            value={machineId}
+            onChange={setMachineId}
+            placeholder="Select machine (3D Chakra / Glass Chakra)..."
+          />
+        )}
+
         {/* Date */}
         <DatePicker
           label="Production Date"
@@ -184,9 +210,9 @@ export function ProductionEntryForm() {
           error={errors.date}
         />
 
-        {/* Variant */}
+        {/* Variant — single select */}
         <SearchableSelect
-          label="Variant"
+          label="Variant to Produce"
           options={variants.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
           value={variantId}
           onChange={setVariantId}
@@ -195,17 +221,27 @@ export function ProductionEntryForm() {
         />
 
         {/* Workers */}
-        <WorkerMultiSelect
-          label="Workers (optional)"
-          options={workers.map((w) => ({ id: w.id, name: w.name }))}
-          value={workerIds}
-          onChange={setWorkerIds}
-          disabled={!plantId || workersLoading}
-          placeholder={
-            !plantId ? 'Select a plant first...' : workersLoading ? 'Loading workers...' : 'Search workers...'
-          }
-          error={errors.workerIds}
-        />
+        <fieldset className="rounded-lg border border-gray-200 p-4">
+          <legend className="px-2 text-sm font-medium text-gray-700">Shift Workers (optional)</legend>
+          <div className="space-y-3">
+            <SearchableSelect
+              label="Head Operator"
+              options={workerOptions}
+              value={headOperatorId}
+              onChange={setHeadOperatorId}
+              placeholder={!plantId ? 'Select a plant first…' : workersLoading ? 'Loading…' : 'Select head operator…'}
+              disabled={!plantId || workersLoading}
+            />
+            <SearchableSelect
+              label="Assistant"
+              options={workerOptions}
+              value={assistantId}
+              onChange={setAssistantId}
+              placeholder={!plantId ? 'Select a plant first…' : workersLoading ? 'Loading…' : 'Select assistant…'}
+              disabled={!plantId || workersLoading}
+            />
+          </div>
+        </fieldset>
 
         {/* Electricity start reading */}
         <fieldset className="rounded-lg border border-gray-200 p-4">
@@ -223,9 +259,6 @@ export function ProductionEntryForm() {
                 errors.electricityStart ? 'border-red-400' : 'border-gray-300'
               }`}
             />
-            {errors.electricityStart && (
-              <p className="mt-1 text-xs text-red-600">{errors.electricityStart}</p>
-            )}
           </div>
         </fieldset>
 
@@ -260,4 +293,3 @@ export function ProductionEntryForm() {
     </div>
   );
 }
-

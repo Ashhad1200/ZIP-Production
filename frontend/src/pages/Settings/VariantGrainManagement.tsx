@@ -10,6 +10,11 @@ import { settingsApi, type Variant, type GrainType } from '../../services/settin
 
 // ─── Variant Form ───────────────────────────────────────────────────────────
 
+interface IngredientRow {
+  grainTypeId: string;
+  ratioPercent: string; // string for input binding
+}
+
 interface VariantFormProps {
   variant?: Variant | null;
   grainOptions: SelectOption[];
@@ -27,20 +32,52 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
   const [standardGramsPerMeter, setStandardGramsPerMeter] = useState(
     String(variant?.standardGramsPerMeter ?? ''),
   );
-  const [grainTypeId, setGrainTypeId] = useState(variant?.grainTypeId ?? '');
+
+  // Ingredient rows — pre-fill from existing variant
+  const [ingredients, setIngredients] = useState<IngredientRow[]>(() => {
+    if (variant?.ingredients && variant.ingredients.length > 0) {
+      return variant.ingredients.map((i) => ({
+        grainTypeId: i.grainTypeId,
+        ratioPercent: String(i.ratioPercent),
+      }));
+    }
+    if (variant?.grainTypeId) {
+      return [{ grainTypeId: variant.grainTypeId, ratioPercent: '100' }];
+    }
+    return [{ grainTypeId: '', ratioPercent: '100' }];
+  });
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const addIngredient = () =>
+    setIngredients((prev) => [...prev, { grainTypeId: '', ratioPercent: '' }]);
+
+  const removeIngredient = (idx: number) =>
+    setIngredients((prev) => prev.filter((_, i) => i !== idx));
+
+  const updateIngredient = (idx: number, field: keyof IngredientRow, value: string) =>
+    setIngredients((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+
+  const totalRatio = ingredients.reduce((s, i) => s + (Number(i.ratioPercent) || 0), 0);
 
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
     if (!code.trim()) errs.code = 'Code is required';
     if (!name.trim()) errs.name = 'Name is required';
-    if (!grainTypeId) errs.grainTypeId = 'Grain type is required';
     const gpm = Number(standardGramsPerMeter);
     if (isNaN(gpm) || gpm <= 0) errs.standardGramsPerMeter = 'Must be a positive number';
+    if (ingredients.length === 0) errs.ingredients = 'At least one seed ingredient is required';
+    if (ingredients.some((i) => !i.grainTypeId)) errs.ingredients = 'Select a seed for every ingredient row';
+    const uniqueGrains = new Set(ingredients.map((i) => i.grainTypeId));
+    if (uniqueGrains.size < ingredients.length) errs.ingredients = 'Each seed type can only appear once';
+    if (Math.abs(totalRatio - 100) > 0.01) errs.ingredients = `Ratios must sum to 100% (currently ${totalRatio.toFixed(1)}%)`;
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [code, name, grainTypeId, standardGramsPerMeter]);
+  }, [code, name, standardGramsPerMeter, ingredients, totalRatio]);
+
+  const parsedIngredients = () =>
+    ingredients.map((i) => ({ grainTypeId: i.grainTypeId, ratioPercent: Number(i.ratioPercent) }));
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -48,7 +85,7 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
         code: code.trim(),
         name: name.trim(),
         standardGramsPerMeter: Number(standardGramsPerMeter),
-        grainTypeId,
+        ingredients: parsedIngredients(),
         description: description.trim() || undefined,
       }),
     onSuccess: () => {
@@ -64,10 +101,9 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
   const updateMutation = useMutation({
     mutationFn: () =>
       settingsApi.updateVariant(variant!.id, {
-        code: code.trim(),
         name: name.trim(),
         standardGramsPerMeter: Number(standardGramsPerMeter),
-        grainTypeId,
+        ingredients: parsedIngredients(),
         description: description.trim() || null,
       }),
     onSuccess: () => {
@@ -108,6 +144,7 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
               onChange={(e) => setCode(e.target.value)}
               className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.code ? 'border-red-400' : 'border-gray-300'}`}
               placeholder="e.g. V001"
+              disabled={isEdit}
             />
             {errors.code && <p className="mt-1 text-xs text-red-600">{errors.code}</p>}
           </div>
@@ -124,31 +161,79 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Standard g/m *
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={standardGramsPerMeter}
-              onChange={(e) => setStandardGramsPerMeter(e.target.value)}
-              className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.standardGramsPerMeter ? 'border-red-400' : 'border-gray-300'}`}
-              placeholder="e.g. 45.5"
-            />
-            {errors.standardGramsPerMeter && (
-              <p className="mt-1 text-xs text-red-600">{errors.standardGramsPerMeter}</p>
-            )}
-          </div>
-          <SearchableSelect
-            label="Grain Type *"
-            options={grainOptions}
-            value={grainTypeId}
-            onChange={setGrainTypeId}
-            placeholder="Select grain type"
-            error={errors.grainTypeId}
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Standard g/m *</label>
+          <input
+            type="number"
+            step="0.01"
+            value={standardGramsPerMeter}
+            onChange={(e) => setStandardGramsPerMeter(e.target.value)}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.standardGramsPerMeter ? 'border-red-400' : 'border-gray-300'}`}
+            placeholder="e.g. 45.5"
           />
+          {errors.standardGramsPerMeter && (
+            <p className="mt-1 text-xs text-red-600">{errors.standardGramsPerMeter}</p>
+          )}
+        </div>
+
+        {/* ── Seed Ingredients ── */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700">
+              Seed Ingredients *
+              <span className={`ml-2 text-xs font-normal ${Math.abs(totalRatio - 100) < 0.01 ? 'text-green-600' : 'text-orange-500'}`}>
+                Total: {totalRatio.toFixed(1)}%{Math.abs(totalRatio - 100) < 0.01 ? ' ✓' : ' (must be 100%)'}
+              </span>
+            </label>
+            <button
+              type="button"
+              onClick={addIngredient}
+              className="flex items-center gap-1 rounded-lg border border-dashed border-blue-400 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+            >
+              <Plus size={12} /> Add Seed
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {ingredients.map((row, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <div className="flex-1">
+                  <SearchableSelect
+                    label=""
+                    options={grainOptions}
+                    value={row.grainTypeId}
+                    onChange={(v) => updateIngredient(idx, 'grainTypeId', v)}
+                    placeholder="Select seed type"
+                  />
+                </div>
+                <div className="w-28 flex-shrink-0">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0.1}
+                      max={100}
+                      value={row.ratioPercent}
+                      onChange={(e) => updateIngredient(idx, 'ratioPercent', e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-6 text-sm"
+                      placeholder="100"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                  </div>
+                </div>
+                {ingredients.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeIngredient(idx)}
+                    className="flex-shrink-0 rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {errors.ingredients && <p className="mt-1 text-xs text-red-600">{errors.ingredients}</p>}
         </div>
 
         <div>
@@ -434,14 +519,22 @@ export function VariantGrainManagement() {
       key: 'standardGramsPerMeter',
       header: 'g/m',
       sortable: true,
-      render: (row) => row.standardGramsPerMeter.toFixed(2),
+      render: (row) => Number(row.standardGramsPerMeter).toFixed(2),
     },
     {
       key: 'grainType',
-      header: 'Grain Type',
+      header: 'Seed Mix',
       hideOnMobile: true,
-      render: (row) =>
-        row.grainType ? `${row.grainType.code} – ${row.grainType.name}` : '—',
+      render: (row) => {
+        if (row.ingredients && row.ingredients.length > 0) {
+          return (
+            <span className="text-xs text-gray-700">
+              {row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')}
+            </span>
+          );
+        }
+        return row.grainType ? `${row.grainType.code} – ${row.grainType.name}` : '—';
+      },
     },
     {
       key: 'isActive',
@@ -486,8 +579,12 @@ export function VariantGrainManagement() {
         </button>
       </div>
       <div className="flex gap-3 text-xs text-gray-500">
-        <span>{row.standardGramsPerMeter.toFixed(2)} g/m</span>
-        <span>{row.grainType?.name ?? '—'}</span>
+        <span>{Number(row.standardGramsPerMeter).toFixed(2)} g/m</span>
+        <span>
+          {row.ingredients && row.ingredients.length > 0
+            ? row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')
+            : row.grainType?.name ?? '—'}
+        </span>
       </div>
     </div>
   );

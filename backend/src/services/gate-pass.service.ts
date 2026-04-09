@@ -138,6 +138,27 @@ export class GatePassService {
         });
       }
 
+      // 3b. If order linked, validate delivery meters do not exceed remaining per variant
+      if (input.orderId) {
+        const orderLineItems = await tx.orderLineItem.findMany({
+          where: { orderId: input.orderId },
+        });
+        for (const gpLine of resolvedLines) {
+          const oli = orderLineItems.find((li) => li.variantId === gpLine.variantId);
+          if (oli) {
+            const remaining = oli.metersOrdered - oli.metersDelivered;
+            if (gpLine.meters > remaining) {
+              throw Object.assign(
+                new Error(
+                  `Delivery for variant ${gpLine.variantId} exceeds ordered quantity. Ordered: ${oli.metersOrdered}m, Already delivered: ${oli.metersDelivered}m, Remaining: ${remaining}m, Requested: ${gpLine.meters}m`,
+                ),
+                { statusCode: 422, code: 'DELIVERY_EXCEEDS_ORDER' },
+              );
+            }
+          }
+        }
+      }
+
       // 4. Deduct stock for each line
       for (const line of resolvedLines) {
         await tx.finishedGoodsStock.update({
@@ -246,25 +267,29 @@ export class GatePassService {
         });
       }
 
-      // 12. If order linked, update metersDelivered and auto-complete
+      // 12. If order linked, update metersDelivered per line item and auto-complete
       if (input.orderId) {
-        const totalMetersInPass = resolvedLines.reduce(
-          (sum, l) => sum + l.meters,
-          0,
-        );
-
-        const order = await tx.order.findUnique({
-          where: { id: input.orderId },
-        });
+        const order = await tx.order.findUnique({ where: { id: input.orderId } });
         if (order) {
-          const newDelivered = order.metersDelivered + totalMetersInPass;
-          const newStatus =
-            newDelivered >= order.metersOrdered ? 'COMPLETED' : order.status;
+          // Update each OrderLineItem's metersDelivered
+          for (const line of resolvedLines) {
+            await tx.orderLineItem.updateMany({
+              where: { orderId: input.orderId, variantId: line.variantId },
+              data: { metersDelivered: { increment: line.meters } },
+            });
+          }
+
+          // Recompute aggregate metersDelivered on Order
+          const updatedLineItems = await tx.orderLineItem.findMany({
+            where: { orderId: input.orderId },
+          });
+          const totalDelivered = updatedLineItems.reduce((sum, li) => sum + li.metersDelivered, 0);
+          const newStatus = totalDelivered >= order.metersOrdered ? 'COMPLETED' : order.status;
 
           await tx.order.update({
             where: { id: input.orderId },
             data: {
-              metersDelivered: newDelivered,
+              metersDelivered: totalDelivered,
               status: newStatus,
               updatedBy: userId,
             },
@@ -337,6 +362,7 @@ export class GatePassService {
     // Idempotent: if already RECEIVED, return success
     if (gatePass.status === GatePassStatus.RECEIVED) {
       return {
+        id: gatePass.id,
         status: 'already_received',
         gatePassNumber: gatePass.gatePassNumber,
         clientName: gatePass.client.name,
@@ -388,6 +414,7 @@ export class GatePassService {
     });
 
     return {
+      id: updated.id,
       status: 'received',
       gatePassNumber: updated.gatePassNumber,
       clientName: updated.client.name,
@@ -648,7 +675,14 @@ export class GatePassService {
         orderNumber: true,
         metersOrdered: true,
         metersDelivered: true,
-        variant: { select: { id: true, code: true, name: true } },
+        lineItems: {
+          select: {
+            variantId: true,
+            variant: { select: { id: true, code: true, name: true } },
+            metersOrdered: true,
+            metersDelivered: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -709,6 +743,7 @@ export class GatePassService {
           : gp.paymentDueDate,
       receivedAt: gp.receivedAt?.toISOString() ?? null,
       receivedBy: gp.receivedBy ?? null,
+      receiptPhotoUrl: gp.receiptPhotoUrl ?? null,
       journalEntry: gp.journalEntry ?? null,
       lineItems: (gp.lineItems || []).map((li: Record<string, unknown>) => ({
         id: li.id,
@@ -724,6 +759,59 @@ export class GatePassService {
       updatedAt: gp.updatedAt?.toISOString(),
       version: gp.version,
     };
+  }
+
+  /**
+   * Attach a receipt photo URL to a gate pass after RECEIVED confirmation.
+   * Can be called from the public QR-verify flow (no auth — uses verifyToken) or
+   * from authenticated endpoints (userId provided).
+   */
+  async uploadReceiptPhoto(id: string, photoUrl: string, options: { token?: string; userId?: string }) {
+    const gatePass = await prisma.gatePass.findUnique({ where: { id, isDeleted: false } });
+
+    if (!gatePass) {
+      throw Object.assign(new Error('Gate pass not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+
+    // Validate token when coming from public QR flow
+    if (options.token) {
+      if (gatePass.verifyToken !== options.token) {
+        throw Object.assign(new Error('Invalid verify token'), { statusCode: 401, code: 'INVALID_TOKEN' });
+      }
+    }
+
+    if (gatePass.status !== GatePassStatus.RECEIVED) {
+      throw Object.assign(
+        new Error('Receipt photo can only be uploaded after gate pass is marked RECEIVED'),
+        { statusCode: 422, code: 'INVALID_STATUS' }
+      );
+    }
+
+    const updated = await prisma.gatePass.update({
+      where: { id },
+      data: {
+        receiptPhotoUrl: photoUrl,
+        updatedBy: options.userId ?? 'system',
+      },
+    });
+
+    // Best-effort audit — skip if no valid userId (e.g. public QR flow)
+    if (options.userId) {
+      try {
+        await auditService.log({
+          entityType: 'GatePass',
+          entityId: id,
+          action: AuditAction.UPDATE,
+          newValue: { receiptPhotoUrl: photoUrl },
+          changedFields: ['receiptPhotoUrl'],
+          userId: options.userId,
+        });
+      } catch {
+        // Audit failure must not block photo upload
+      }
+    }
+
+    return { id: updated.id, receiptPhotoUrl: updated.receiptPhotoUrl };
   }
 }
 

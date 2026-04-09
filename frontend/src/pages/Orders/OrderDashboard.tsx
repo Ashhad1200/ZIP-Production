@@ -124,11 +124,11 @@ export function OrderDashboard() {
       render: (row) => row.client.name,
     },
     {
-      key: 'variant',
-      header: 'Variant',
-      sortable: true,
+      key: 'lineItems',
+      header: 'Variant(s)',
+      sortable: false,
       hideOnMobile: true,
-      render: (row) => `${row.variant.code} — ${row.variant.name}`,
+      render: (row) => row.lineItems.map((li) => `${li.variant.code}`).join(', '),
     },
     {
       key: 'metersOrdered',
@@ -230,7 +230,7 @@ export function OrderDashboard() {
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-900">{row.client.name}</span>
         <span className="text-gray-500">
-          {row.variant.code}
+          {row.lineItems.map((li) => li.variant.code).join(', ')}
         </span>
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500">

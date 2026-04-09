@@ -1,17 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Loader2, Camera, Upload } from 'lucide-react';
 import { gatePassApi, type VerifyResult } from '../../services/gate-pass.api';
 
 type VerifyState =
   | { status: 'loading' }
-  | { status: 'success'; data: VerifyResult }
+  | { status: 'success'; data: VerifyResult; gatePassId: string }
   | { status: 'error'; message: string; code?: string };
+
+type PhotoState =
+  | { status: 'idle' }
+  | { status: 'uploading' }
+  | { status: 'done'; url: string }
+  | { status: 'error'; message: string };
 
 export function VerifyGatePass() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const [state, setState] = useState<VerifyState>({ status: 'loading' });
+  const [photoState, setPhotoState] = useState<PhotoState>({ status: 'idle' });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!token) {
@@ -22,7 +30,7 @@ export function VerifyGatePass() {
     gatePassApi
       .verify(token)
       .then((result) => {
-        setState({ status: 'success', data: result.data });
+        setState({ status: 'success', data: result.data, gatePassId: result.data.id ?? '' });
       })
       .catch((err) => {
         const errorData = err.response?.data?.error;
@@ -33,6 +41,32 @@ export function VerifyGatePass() {
         });
       });
   }, [token]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || state.status !== 'success') return;
+
+    setPhotoState({ status: 'uploading' });
+
+    try {
+      // Convert to base64 data URL for simple upload (no server-side file handling needed)
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result as string;
+        try {
+          await gatePassApi.uploadReceiptPhoto(state.gatePassId, dataUrl, token ?? undefined);
+          setPhotoState({ status: 'done', url: dataUrl });
+        } catch (err: unknown) {
+          const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+            .response?.data?.error?.message || 'Upload failed';
+          setPhotoState({ status: 'error', message: msg });
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setPhotoState({ status: 'error', message: 'Failed to read file' });
+    }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
@@ -107,6 +141,80 @@ export function VerifyGatePass() {
                 ⚠️ This gate pass was already marked as received
               </p>
             )}
+
+            {/* Receipt Photo Upload */}
+            <div className="mt-4 border-t pt-4">
+              <h3 className="mb-2 text-sm font-semibold text-gray-700">
+                📸 Upload Signed Receipt Photo
+              </h3>
+              {photoState.status === 'idle' && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-gray-500">
+                    Take a photo of the signed physical receipt as proof of delivery.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'image/*';
+                          fileInputRef.current.capture = 'environment';
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                    >
+                      <Camera size={16} /> Camera
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'image/*';
+                          fileInputRef.current.removeAttribute('capture');
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300"
+                    >
+                      <Upload size={16} /> Gallery
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              )}
+              {photoState.status === 'uploading' && (
+                <div className="flex items-center gap-2 text-sm text-blue-600">
+                  <Loader2 size={16} className="animate-spin" /> Uploading photo...
+                </div>
+              )}
+              {photoState.status === 'done' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <CheckCircle size={16} /> Receipt photo uploaded successfully
+                  </div>
+                  <img
+                    src={photoState.url}
+                    alt="Receipt"
+                    className="max-h-48 w-full rounded-lg object-contain border"
+                  />
+                </div>
+              )}
+              {photoState.status === 'error' && (
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <XCircle size={16} /> {photoState.message}
+                  <button
+                    onClick={() => setPhotoState({ status: 'idle' })}
+                    className="ml-auto text-xs underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

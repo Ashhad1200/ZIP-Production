@@ -6,7 +6,194 @@ import { auditService } from './audit.service';
 import { notificationService } from './notification.service';
 import { toISODate } from '../utils/date';
 
+// ─── FIFO batch deduction result ─────────────────────────────────────────────
+export interface FifoDeductionResult {
+  totalBagsConsumed: number;
+  totalCostPaisa: bigint;
+  breakdown: Array<{
+    batchId: string;
+    bagsConsumed: number;
+    pricePerBagPaisa: bigint;
+    costPaisa: bigint;
+  }>;
+}
+
 export class InventoryService {
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  FIFO BATCH COSTING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Deduct bags from FIFO batches within a transaction.
+   * Returns breakdown of which batches were consumed and at what cost.
+   */
+  async deductFifoBatches(
+    grainTypeId: string,
+    bagsNeeded: number,
+    userId: string,
+    tx: Prisma.TransactionClient
+  ): Promise<FifoDeductionResult> {
+    // Fetch non-exhausted batches ordered by purchase date (oldest first = FIFO)
+    const batches = await tx.rawMaterialBatch.findMany({
+      where: { grainTypeId, isExhausted: false },
+      orderBy: [{ purchaseDate: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    let remaining = bagsNeeded;
+    const breakdown: FifoDeductionResult['breakdown'] = [];
+
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+
+      const batchAvailable = Number(batch.bagsRemaining);
+      const consume = Math.min(batchAvailable, remaining);
+      const costPaisa = BigInt(Math.round(consume * Number(batch.pricePerBagPaisa)));
+
+      const newBagsRemaining = batchAvailable - consume;
+      await tx.rawMaterialBatch.update({
+        where: { id: batch.id },
+        data: {
+          bagsRemaining: new Prisma.Decimal(newBagsRemaining),
+          isExhausted: newBagsRemaining <= 0,
+          updatedBy: userId,
+        },
+      });
+
+      breakdown.push({
+        batchId: batch.id,
+        bagsConsumed: consume,
+        pricePerBagPaisa: batch.pricePerBagPaisa,
+        costPaisa,
+      });
+
+      remaining -= consume;
+    }
+
+    if (remaining > 0.0001) {
+      // Not enough batch stock — consume what's available (stock deduction handles the total)
+      // This handles edge case where stock count and batch count diverge
+    }
+
+    const totalBagsConsumed = bagsNeeded - Math.max(0, remaining);
+    const totalCostPaisa = breakdown.reduce((sum, b) => sum + b.costPaisa, 0n);
+
+    return { totalBagsConsumed, totalCostPaisa, breakdown };
+  }
+
+  /**
+   * List all FIFO batches for a grain type (for UI display).
+   */
+  async listBatches(params: { grainTypeId?: string; includeExhausted?: boolean } = {}) {
+    const { grainTypeId, includeExhausted = false } = params;
+    const batches = await prisma.rawMaterialBatch.findMany({
+      where: {
+        ...(grainTypeId ? { grainTypeId } : {}),
+        ...(!includeExhausted ? { isExhausted: false } : {}),
+      },
+      include: {
+        grainType: { select: { id: true, code: true, name: true } },
+        purchase: { select: { id: true, purchaseDate: true, source: true } },
+      },
+      orderBy: [{ grainTypeId: 'asc' }, { purchaseDate: 'asc' }],
+    });
+
+    return batches.map((b) => ({
+      id: b.id,
+      grainType: b.grainType,
+      purchaseDate: toISODate(b.purchaseDate),
+      source: b.source,
+      bagsTotal: Number(b.bagsTotal),
+      bagsRemaining: Number(b.bagsRemaining),
+      bagsConsumed: Number(b.bagsTotal) - Number(b.bagsRemaining),
+      pricePerBagPaisa: Number(b.pricePerBagPaisa),
+      pricePerBagDisplay: formatPaisaToRupees(b.pricePerBagPaisa),
+      isExhausted: b.isExhausted,
+      purchaseId: b.purchaseId,
+    }));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  ELECTRICITY RATES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Get the current active electricity rate. */
+  async getCurrentElectricityRate(): Promise<{ id: string; ratePaisaPerUnit: bigint; effectiveFrom: string } | null> {
+    const today = new Date();
+    const rate = await prisma.electricityRate.findFirst({
+      where: {
+        effectiveFrom: { lte: today },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: today } }],
+      },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    if (!rate) return null;
+    return {
+      id: rate.id,
+      ratePaisaPerUnit: rate.ratePaisaPerUnit,
+      effectiveFrom: toISODate(rate.effectiveFrom),
+    };
+  }
+
+  /** Get electricity rate active on a specific date. */
+  async getElectricityRateOnDate(date: Date): Promise<bigint | null> {
+    const rate = await prisma.electricityRate.findFirst({
+      where: {
+        effectiveFrom: { lte: date },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
+      },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    return rate?.ratePaisaPerUnit ?? null;
+  }
+
+  /** List all electricity rate history. */
+  async listElectricityRates() {
+    const rates = await prisma.electricityRate.findMany({
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    return rates.map((r) => ({
+      id: r.id,
+      ratePaisaPerUnit: Number(r.ratePaisaPerUnit),
+      rateDisplay: formatPaisaToRupees(r.ratePaisaPerUnit),
+      effectiveFrom: toISODate(r.effectiveFrom),
+      effectiveTo: r.effectiveTo ? toISODate(r.effectiveTo) : null,
+      notes: r.notes,
+    }));
+  }
+
+  /** Create a new electricity rate. Closes the previous rate's effectiveTo. */
+  async createElectricityRate(
+    input: { ratePaisaPerUnit: bigint | number; effectiveFrom: string; notes?: string },
+    userId: string
+  ) {
+    const effectiveFrom = new Date(input.effectiveFrom + 'T00:00:00.000Z');
+
+    return prisma.$transaction(async (tx) => {
+      // Close any rate that overlaps
+      await tx.electricityRate.updateMany({
+        where: { effectiveTo: null, effectiveFrom: { lt: effectiveFrom } },
+        data: { effectiveTo: effectiveFrom, updatedBy: userId },
+      });
+
+      const rate = await tx.electricityRate.create({
+        data: {
+          ratePaisaPerUnit: BigInt(input.ratePaisaPerUnit),
+          effectiveFrom,
+          notes: input.notes,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+
+      return {
+        id: rate.id,
+        ratePaisaPerUnit: Number(rate.ratePaisaPerUnit),
+        rateDisplay: formatPaisaToRupees(rate.ratePaisaPerUnit),
+        effectiveFrom: toISODate(rate.effectiveFrom),
+      };
+    });
+  }
+
   /**
    * List finished goods stock, optionally filtered by variant or low-stock flag.
    */
@@ -215,6 +402,21 @@ export class InventoryService {
       await tx.journalEntry.update({
         where: { id: journalEntry.id },
         data: { referenceId: purchase.id },
+      });
+
+      // Create FIFO batch for this purchase
+      await tx.rawMaterialBatch.create({
+        data: {
+          grainTypeId: input.grainTypeId,
+          purchaseId: purchase.id,
+          bagsTotal: new Prisma.Decimal(input.numberOfBags),
+          bagsRemaining: new Prisma.Decimal(input.numberOfBags),
+          pricePerBagPaisa: BigInt(input.ratePerBagPaisa),
+          purchaseDate,
+          source: input.source,
+          createdBy: userId,
+          updatedBy: userId,
+        },
       });
 
       // Upsert raw material stock

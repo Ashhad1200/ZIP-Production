@@ -30,20 +30,20 @@ export class OrderController {
 
   async createOrder(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { clientId, variantId, metersOrdered, ratePerMeterPaisa, deliveryDeadline } = req.body;
+      const { clientId, lineItems, deliveryDeadline } = req.body;
 
-      if (!clientId || !variantId || metersOrdered == null || ratePerMeterPaisa == null || !deliveryDeadline) {
+      if (!clientId || !Array.isArray(lineItems) || lineItems.length === 0 || !deliveryDeadline) {
         res.status(422).json({
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Missing required fields: clientId, variantId, metersOrdered, ratePerMeterPaisa, deliveryDeadline',
+            message: 'Missing required fields: clientId, lineItems (array), deliveryDeadline',
           },
         });
         return;
       }
 
       const result = await orderService.createOrder(
-        { clientId, variantId, metersOrdered, ratePerMeterPaisa, deliveryDeadline },
+        { clientId, lineItems, deliveryDeadline },
         req.user!.userId
       );
 

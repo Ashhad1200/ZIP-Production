@@ -82,6 +82,12 @@ router.patch(
   gatePassController.updateStatus.bind(gatePassController),
 );
 
+// Receipt photo upload — semi-public: accepts token (from QR flow) OR authenticated user
+router.patch(
+  '/:id/receipt-photo',
+  gatePassController.uploadReceiptPhoto.bind(gatePassController),
+);
+
 router.get(
   '/:id/pdf',
   authenticate,

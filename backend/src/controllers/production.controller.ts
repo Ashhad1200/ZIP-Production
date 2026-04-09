@@ -31,19 +31,19 @@ export class ProductionController {
   async createEntry(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const {
-        plantId, shift, date, variantId,
-        electricityStartReading, workerIds,
+        plantId, machineId, shift, date, variantId, variants,
+        electricityStartReading, workers, workerIds,
       } = req.body;
 
-      if (!plantId || !shift || !date || !variantId) {
+      if (!plantId || !shift || !date) {
         res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'Missing required fields: plantId, shift, date, variantId' },
+          error: { code: 'VALIDATION_ERROR', message: 'Missing required fields: plantId, shift, date. Provide variantId (single) or variants[] (multi).' },
         });
         return;
       }
 
       const result = await productionService.createEntry(
-        { plantId, shift, date, variantId, electricityStartReading, workerIds },
+        { plantId, machineId, shift, date, variantId, variants, electricityStartReading, workers, workerIds },
         req.user!.userId
       );
 
@@ -55,18 +55,19 @@ export class ProductionController {
 
   async completeEntry(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { metersProduced, gramsPerMeter, electricityEndReading, scrapWeightGrams } = req.body;
+      const { variants, metersProduced, gramsPerMeter, electricityEndReading, scrapWeightGrams } = req.body;
 
-      if (metersProduced == null || gramsPerMeter == null) {
+      // Must provide either variants[] or flat metersProduced+gramsPerMeter
+      if (!variants?.length && (metersProduced == null || gramsPerMeter == null)) {
         res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'Missing required fields: metersProduced, gramsPerMeter' },
+          error: { code: 'VALIDATION_ERROR', message: 'Provide variants[] for multi-variant or metersProduced+gramsPerMeter for single-variant completion.' },
         });
         return;
       }
 
       const result = await productionService.completeEntry(
         String(req.params.id),
-        { metersProduced, gramsPerMeter, electricityEndReading, scrapWeightGrams },
+        { variants, metersProduced, gramsPerMeter, electricityEndReading, scrapWeightGrams },
         req.user!.userId
       );
 

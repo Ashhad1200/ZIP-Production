@@ -42,7 +42,6 @@ function WorkersTab() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rate, setRate] = useState('');
-  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -51,8 +50,8 @@ function WorkersTab() {
   });
 
   const setRateMut = useMutation({
-    mutationFn: ({ id, r, d }: { id: string; r: number; d: string }) =>
-      hrApi.setSalaryRate(id, { dailyRate: r, effectiveDate: d }),
+    mutationFn: ({ id, r }: { id: string; r: number }) =>
+      hrApi.setSalaryRate(id, { monthlySalaryPkr: r }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-workers'] });
       setEditingId(null);
@@ -79,9 +78,8 @@ function WorkersTab() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Worker</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600 hidden sm:table-cell">Phone</th>
-                <th className="px-4 py-3 text-right font-medium text-gray-600">Daily Rate (PKR)</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600 hidden md:table-cell">Effective From</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600 hidden sm:table-cell">Designation</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Monthly Salary (PKR)</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -89,40 +87,28 @@ function WorkersTab() {
               {(data ?? []).map((w: WorkerSalaryInfo) => (
                 <tr key={w.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{w.name}</td>
-                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{w.phone ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{w.designation ?? '—'}</td>
                   <td className="px-4 py-3 text-right">
                     {editingId === w.id ? (
                       <input
                         type="number"
                         value={rate}
                         onChange={(e) => setRate(e.target.value)}
-                        className={`${inputCls} w-28 text-right`}
+                        className={`${inputCls} w-36 text-right`}
                         placeholder="0"
                         min={0}
                       />
                     ) : (
-                      <span className={w.currentRate ? 'font-medium' : 'text-gray-400'}>
-                        {w.currentRate != null ? Number(w.currentRate).toLocaleString() : '—'}
+                      <span className={w.currentSalaryPaisa ? 'font-medium' : 'text-gray-400'}>
+                        {w.currentSalaryDisplay}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
-                    {editingId === w.id ? (
-                      <input
-                        type="date"
-                        value={effectiveDate}
-                        onChange={(e) => setEffectiveDate(e.target.value)}
-                        className={inputCls}
-                      />
-                    ) : (
-                      w.rateEffectiveDate ? formatDatePKT(w.rateEffectiveDate) : '—'
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {editingId === w.id ? (
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => setRateMut.mutate({ id: w.id, r: Number(rate), d: effectiveDate })}
+                          onClick={() => setRateMut.mutate({ id: w.id, r: Number(rate) })}
                           disabled={setRateMut.isPending || !rate}
                           className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                         >
@@ -139,8 +125,11 @@ function WorkersTab() {
                       <button
                         onClick={() => {
                           setEditingId(w.id);
-                          setRate(w.currentRate != null ? String(w.currentRate) : '');
-                          setEffectiveDate(new Date().toISOString().slice(0, 10));
+                          setRate(
+                            w.currentSalaryPaisa != null
+                              ? String(Math.round(Number(w.currentSalaryPaisa) / 100))
+                              : ''
+                          );
                         }}
                         className="rounded-lg border px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
                       >
@@ -152,7 +141,7 @@ function WorkersTab() {
               ))}
               {!data?.length && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
                     No workers found. Add workers in Settings → Workers.
                   </td>
                 </tr>
@@ -261,10 +250,10 @@ function PayrollTab() {
       {summary && (
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            { label: 'Workers', val: summary.totalWorkers },
-            { label: 'Gross', val: `PKR ${Number(summary.totalGross).toLocaleString()}` },
-            { label: 'Deductions', val: `PKR ${Number(summary.totalDeductions).toLocaleString()}` },
-            { label: 'Net Paid', val: `PKR ${Number(summary.totalNet).toLocaleString()}` },
+            { label: 'Workers', val: String(summary.workerCount) },
+            { label: 'Gross', val: summary.totalGrossDisplay },
+            { label: 'Deductions', val: summary.totalDeductionsDisplay },
+            { label: 'Net Paid', val: summary.totalNetDisplay },
           ].map((s) => (
             <div key={s.label} className="rounded-lg border bg-white p-3">
               <p className="text-xs text-gray-500">{s.label}</p>
@@ -294,11 +283,19 @@ function PayrollTab() {
               {(records ?? []).map((r: PayrollRecord) => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{r.worker.name}</td>
-                  <td className="px-4 py-3 text-right">{Number(r.grossSalary).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-red-600 hidden sm:table-cell">{Number(r.deductions).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-orange-600 hidden sm:table-cell">{Number(r.advanceDeduction).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-green-700">{Number(r.netSalary).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{r.journalEntry?.entryNumber ?? '—'}</td>
+                  <td className="px-4 py-3 text-right">{r.grossSalaryDisplay}</td>
+                  <td className="px-4 py-3 text-right text-red-600 hidden sm:table-cell">
+                    {Number(r.deductionsPaisa) > 0
+                      ? `PKR ${(Number(r.deductionsPaisa) / 100).toLocaleString()}`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-orange-600 hidden sm:table-cell">
+                    {Number(r.advanceDeductionPaisa) > 0
+                      ? `PKR ${(Number(r.advanceDeductionPaisa) / 100).toLocaleString()}`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-green-700">{r.netSalaryDisplay}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{r.journalEntryId ?? '—'}</td>
                 </tr>
               ))}
               {!records?.length && (
@@ -523,7 +520,7 @@ function AdvancesTab() {
               {(advances ?? []).map((a: WorkerAdvance) => (
                 <tr key={a.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{a.worker.name}</td>
-                  <td className="px-4 py-3 text-right font-medium">{Number(a.amount).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-medium">{a.amountDisplay}</td>
                   <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{formatDatePKT(a.date)}</td>
                   <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{a.reason ?? '—'}</td>
                   <td className="px-4 py-3">

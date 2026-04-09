@@ -223,14 +223,26 @@ function ShiftSection({ label, data }: { label: string; data: DPRShiftData }) {
         </div>
         <div className="rounded-lg bg-gray-50 px-3 py-2">
           <span className="block text-xs text-gray-500">Workers</span>
-          <span className="text-sm font-medium text-gray-900">
-            {data.workers.length}
-            {data.workers.length > 0 && data.workers.length <= 5 && (
-              <span className="ml-1 text-xs text-gray-400">
-                ({data.workers.join(', ')})
-              </span>
-            )}
-          </span>
+          {data.workers.length === 0 ? (
+            <span className="text-sm font-medium text-gray-400">—</span>
+          ) : (
+            <div className="mt-0.5 space-y-0.5">
+              {data.workers.map((w) => (
+                <div key={w.name} className="flex items-center gap-1">
+                  <span className="text-sm font-medium text-gray-900">{w.name}</span>
+                  {w.role && (
+                    <span className={`rounded px-1 py-0.5 text-xs font-medium ${
+                      w.role === 'HEAD_OPERATOR'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {w.role === 'HEAD_OPERATOR' ? 'Head Op' : 'Asst'}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

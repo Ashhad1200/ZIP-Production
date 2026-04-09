@@ -284,6 +284,9 @@ function WorkerFormModal({ worker, plantOptions, onClose, onSuccess }: WorkerFor
   const [designation, setDesignation] = useState(worker?.designation ?? '');
   const [plantId, setPlantId] = useState(worker?.plantId ?? '');
   const [isActive, setIsActive] = useState(worker?.isActive ?? true);
+  const [shiftCostPkr, setShiftCostPkr] = useState(
+    worker?.shiftCostPaisa != null ? String(worker.shiftCostPaisa / 100) : '',
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -300,6 +303,7 @@ function WorkerFormModal({ worker, plantOptions, onClose, onSuccess }: WorkerFor
         name: name.trim(),
         designation: designation.trim() || undefined,
         plantId: plantId || undefined,
+        shiftCostPaisa: shiftCostPkr ? Math.round(parseFloat(shiftCostPkr) * 100) : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-workers'] });
@@ -318,6 +322,7 @@ function WorkerFormModal({ worker, plantOptions, onClose, onSuccess }: WorkerFor
         designation: designation.trim() || null,
         plantId: plantId || null,
         isActive,
+        shiftCostPaisa: shiftCostPkr ? Math.round(parseFloat(shiftCostPkr) * 100) : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-workers'] });
@@ -377,6 +382,21 @@ function WorkerFormModal({ worker, plantOptions, onClose, onSuccess }: WorkerFor
           placeholder="Unassigned"
           clearable
         />
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Shift Cost (PKR){' '}
+            <span className="text-gray-400 font-normal">— used in cost price calculations</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={shiftCostPkr}
+            onChange={(e) => setShiftCostPkr(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            placeholder="e.g. 1500.00"
+          />
+        </div>
         {isEdit && (
           <label className="flex min-h-[44px] items-center gap-2 text-sm text-gray-700">
             <input

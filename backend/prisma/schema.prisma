@@ -49,6 +49,11 @@ enum ApprovalStatus {
   REJECTED
 }
 
+enum WorkerRole {
+  HEAD_OPERATOR
+  ASSISTANT
+}
+
 enum PaymentMode {
   CASH
   CHEQUE
@@ -156,6 +161,8 @@ model Machine {
 
   plant Plant @relation(fields: [plantId], references: [id])
 
+  productionEntries ProductionEntry[]
+
   @@index([plantId])
   @@index([isDeleted])
   @@map("machines")
@@ -169,6 +176,7 @@ model Worker {
   designation String?
   plantId     String?
   isActive    Boolean @default(true)
+  shiftCostPaisa BigInt? // per-shift labor cost for cost-price calculation
 
   // audit fields
   createdBy String
@@ -199,7 +207,9 @@ model ZipperVariant {
   name                  String
   description           String?
   standardGramsPerMeter Decimal
-  grainTypeId           String
+  // grainTypeId is kept for backward compat but is now nullable.
+  // Use the `ingredients` relation for multi-seed mixing.
+  grainTypeId           String?
   isActive              Boolean @default(true)
 
   // audit fields
@@ -212,16 +222,35 @@ model ZipperVariant {
   deletedBy String?
   version   Int       @default(1)
 
-  grainType          GrainType           @relation(fields: [grainTypeId], references: [id])
+  grainType          GrainType?           @relation(fields: [grainTypeId], references: [id])
+  ingredients        VariantIngredient[]
   productionEntries  ProductionEntry[]
+  shiftVariants      ProductionShiftVariant[]
   gatePassLineItems  GatePassLineItem[]
-  orders             Order[]
+  orderLineItems     OrderLineItem[]
   clientRates        ClientRate[]
   finishedGoodsStock FinishedGoodsStock?
+  salesReturnLineItems SalesReturnLineItem[]
 
   @@index([grainTypeId])
   @@index([isDeleted])
   @@map("zipper_variants")
+}
+
+// ─── 5b. VariantIngredient (multi-seed mixing) ──────────────────────────────
+
+model VariantIngredient {
+  id           String  @id @default(uuid())
+  variantId    String
+  grainTypeId  String
+  ratioPercent Decimal // 0-100; all rows for a variant must sum to 100
+
+  variant   ZipperVariant @relation(fields: [variantId], references: [id])
+  grainType GrainType     @relation(fields: [grainTypeId], references: [id])
+
+  @@unique([variantId, grainTypeId])
+  @@index([grainTypeId])
+  @@map("variant_ingredients")
 }
 
 // ─── 6. GrainType ───────────────────────────────────────────────────────────
@@ -246,8 +275,10 @@ model GrainType {
   version   Int       @default(1)
 
   zipperVariants       ZipperVariant[]
+  variantIngredients   VariantIngredient[]
   rawMaterialStock     RawMaterialStock?
   rawMaterialPurchases RawMaterialPurchase[]
+  rawMaterialBatches   RawMaterialBatch[]
 
   @@index([isDeleted])
   @@map("grain_types")
@@ -258,9 +289,10 @@ model GrainType {
 model ProductionEntry {
   id                          String            @id @default(uuid())
   plantId                     String
+  machineId                   String?           // which machine (3D Chakra / Glass Chakra)
   shift                       Shift
   date                        DateTime          @db.Date
-  variantId                   String
+  variantId                   String?
   status                      ProductionStatus  @default(IN_PRODUCTION)
   metersProduced              Int?
   gramsPerMeter               Decimal?
@@ -281,11 +313,15 @@ model ProductionEntry {
   deletedBy String?
   version   Int       @default(1)
 
-  plant   Plant                   @relation(fields: [plantId], references: [id])
-  variant ZipperVariant           @relation(fields: [variantId], references: [id])
+  plant   Plant                        @relation(fields: [plantId], references: [id])
+  machine Machine?                     @relation(fields: [machineId], references: [id])
+  variant ZipperVariant?               @relation(fields: [variantId], references: [id])
   workers ProductionEntryWorker[]
+  batchConsumptions ProductionBatchConsumption[]
+  shiftVariants     ProductionShiftVariant[]
 
-  @@unique([plantId, shift, date])
+  // No unique constraint — multiple entries per shift are allowed (each entry = one variant run)
+  @@index([plantId, shift, date])
   @@index([variantId])
   @@index([date])
   @@index([plantId, date])
@@ -293,11 +329,31 @@ model ProductionEntry {
   @@map("production_entries")
 }
 
+// ─── 7b. ProductionShiftVariant (per-variant data within a shift) ───────────
+
+model ProductionShiftVariant {
+  id               String   @id @default(uuid())
+  entryId          String
+  variantId        String
+  metersProduced   Int      @default(0)
+  gramsPerMeter    Decimal?
+  scrapWeightGrams Int      @default(0)
+
+  entry   ProductionEntry @relation(fields: [entryId], references: [id])
+  variant ZipperVariant   @relation(fields: [variantId], references: [id])
+
+  @@unique([entryId, variantId])
+  @@index([entryId])
+  @@index([variantId])
+  @@map("production_shift_variants")
+}
+
 // ─── 8. ProductionEntryWorker (join table) ──────────────────────────────────
 
 model ProductionEntryWorker {
   productionEntryId String
   workerId          String
+  role              WorkerRole?       // HEAD_OPERATOR or ASSISTANT
 
   productionEntry ProductionEntry @relation(fields: [productionEntryId], references: [id])
   worker          Worker          @relation(fields: [workerId], references: [id])
@@ -360,13 +416,79 @@ model RawMaterialPurchase {
   deletedBy String?
   version   Int       @default(1)
 
-  grainType    GrainType     @relation(fields: [grainTypeId], references: [id])
-  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  grainType    GrainType          @relation(fields: [grainTypeId], references: [id])
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+  batch        RawMaterialBatch?
 
   @@index([grainTypeId])
   @@index([purchaseDate])
   @@index([isDeleted])
   @@map("raw_material_purchases")
+}
+
+// ─── 10b. RawMaterialBatch (FIFO batch costing) ────────────────────────────
+
+model RawMaterialBatch {
+  id               String         @id @default(uuid())
+  grainTypeId      String
+  purchaseId       String         @unique
+  bagsTotal        Decimal
+  bagsRemaining    Decimal
+  pricePerBagPaisa BigInt
+  purchaseDate     DateTime       @db.Date
+  source           PurchaseSource
+  isExhausted      Boolean        @default(false)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+
+  grainType    GrainType                     @relation(fields: [grainTypeId], references: [id])
+  purchase     RawMaterialPurchase           @relation(fields: [purchaseId], references: [id])
+  consumptions ProductionBatchConsumption[]
+
+  @@index([grainTypeId])
+  @@index([grainTypeId, isExhausted])
+  @@index([purchaseDate])
+  @@map("raw_material_batches")
+}
+
+// ─── 10c. ProductionBatchConsumption (FIFO cost tracking per production) ──
+
+model ProductionBatchConsumption {
+  id                String  @id @default(uuid())
+  productionEntryId String
+  batchId           String
+  bagsConsumed      Decimal
+  totalCostPaisa    BigInt
+
+  productionEntry ProductionEntry  @relation(fields: [productionEntryId], references: [id])
+  batch           RawMaterialBatch @relation(fields: [batchId], references: [id])
+
+  @@index([productionEntryId])
+  @@index([batchId])
+  @@map("production_batch_consumptions")
+}
+
+// ─── 10d. ElectricityRate (historical rates for cost price calculation) ───
+
+model ElectricityRate {
+  id               String    @id @default(uuid())
+  ratePaisaPerUnit BigInt
+  effectiveFrom    DateTime  @db.Date
+  effectiveTo      DateTime? @db.Date
+  notes            String?
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+
+  @@index([effectiveFrom])
+  @@map("electricity_rates")
 }
 
 // ─── 11. RawMaterialStock ───────────────────────────────────────────────────
@@ -441,6 +563,7 @@ model Client {
   orders            Order[]
   clientRates       ClientRate[]
   journalEntryLines JournalEntryLine[]
+  salesReturns      SalesReturn[]
   account           Account?           @relation(fields: [accountId], references: [id])
 
   @@index([isDeleted])
@@ -491,6 +614,7 @@ model GatePass {
   verifyTokenExpiresAt DateTime
   receivedAt           DateTime?
   receivedBy           String?
+  receiptPhotoUrl      String?
   totalAmountPaisa     BigInt
   paymentDueDate       DateTime       @db.Date
   journalEntryId       String?        @unique
@@ -505,10 +629,11 @@ model GatePass {
   deletedBy String?
   version   Int       @default(1)
 
-  client       Client             @relation(fields: [clientId], references: [id])
-  order        Order?             @relation(fields: [orderId], references: [id])
-  lineItems    GatePassLineItem[]
-  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+  client        Client              @relation(fields: [clientId], references: [id])
+  order         Order?              @relation(fields: [orderId], references: [id])
+  lineItems     GatePassLineItem[]
+  salesReturns  SalesReturn[]
+  journalEntry  JournalEntry?       @relation(fields: [journalEntryId], references: [id])
 
   @@index([clientId])
   @@index([orderId])
@@ -531,10 +656,59 @@ model GatePassLineItem {
 
   gatePass GatePass      @relation(fields: [gatePassId], references: [id])
   variant  ZipperVariant @relation(fields: [variantId], references: [id])
+  salesReturnLineItems SalesReturnLineItem[]
 
   @@index([gatePassId])
   @@index([variantId])
   @@map("gate_pass_line_items")
+}
+
+// ─── 16b. SalesReturn ────────────────────────────────────────────────────────
+
+model SalesReturn {
+  id               String   @id @default(uuid())
+  returnNumber     String   @unique
+  gatePassId       String
+  clientId         String
+  date             DateTime @db.Date
+  reason           String?
+  totalAmountPaisa BigInt
+  journalEntryId   String?  @unique
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+
+  gatePass     GatePass              @relation(fields: [gatePassId], references: [id])
+  client       Client                @relation(fields: [clientId], references: [id])
+  journalEntry JournalEntry?         @relation(fields: [journalEntryId], references: [id])
+  lineItems    SalesReturnLineItem[]
+
+  @@index([gatePassId])
+  @@index([clientId])
+  @@index([date])
+  @@map("sales_returns")
+}
+
+model SalesReturnLineItem {
+  id                 String @id @default(uuid())
+  salesReturnId      String
+  gatePassLineItemId String
+  variantId          String
+  metersReturned     Int
+  ratePerMeterPaisa  BigInt
+  lineAmountPaisa    BigInt
+
+  salesReturn      SalesReturn      @relation(fields: [salesReturnId], references: [id])
+  gatePassLineItem GatePassLineItem @relation(fields: [gatePassLineItemId], references: [id])
+  variant          ZipperVariant    @relation(fields: [variantId], references: [id])
+
+  @@index([salesReturnId])
+  @@index([gatePassLineItemId])
+  @@index([variantId])
+  @@map("sales_return_line_items")
 }
 
 // ─── 17. Order ──────────────────────────────────────────────────────────────
@@ -543,9 +717,7 @@ model Order {
   id                String      @id @default(uuid())
   orderNumber       String      @unique
   clientId          String
-  variantId         String
   metersOrdered     Int
-  ratePerMeterPaisa BigInt
   totalAmountPaisa  BigInt
   deliveryDeadline  DateTime    @db.Date
   metersDelivered   Int         @default(0)
@@ -561,16 +733,31 @@ model Order {
   deletedBy String?
   version   Int       @default(1)
 
-  client     Client        @relation(fields: [clientId], references: [id])
-  variant    ZipperVariant @relation(fields: [variantId], references: [id])
+  client     Client          @relation(fields: [clientId], references: [id])
+  lineItems  OrderLineItem[]
   gatePasses GatePass[]
 
   @@index([clientId])
-  @@index([variantId])
   @@index([status])
   @@index([clientId, status])
   @@index([isDeleted])
   @@map("orders")
+}
+
+model OrderLineItem {
+  id                String @id @default(uuid())
+  orderId           String
+  variantId         String
+  metersOrdered     Int
+  metersDelivered   Int    @default(0)
+  ratePerMeterPaisa BigInt
+
+  order   Order         @relation(fields: [orderId], references: [id])
+  variant ZipperVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([variantId])
+  @@map("order_line_items")
 }
 
 // ─── 18. Account ────────────────────────────────────────────────────────────
@@ -623,6 +810,7 @@ model JournalEntry {
   scrapSale           ScrapSale?
   rawMaterialPurchase RawMaterialPurchase?
   payrollRecord       PayrollRecord?
+  salesReturn         SalesReturn?
 
   @@index([entryDate])
   @@index([status])

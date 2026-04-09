@@ -14,11 +14,39 @@ export interface VariantRef {
   name: string;
 }
 
+export interface OrderLineItem {
+  id: string;
+  variantId: string;
+  variant: VariantRef;
+  metersOrdered: number;
+  metersDelivered: number;
+  // Financial (only for FINANCE_HEAD/SUPER_ADMIN)
+  ratePerMeterPaisa?: string;
+  ratePerMeterDisplay?: string;
+}
+
+export interface DeliveryLineItem {
+  id: string;
+  meters: number;
+  variant: VariantRef;
+}
+
+export interface Delivery {
+  id: string;
+  gatePassNumber: string;
+  date: string;
+  status: string;
+  totalAmountPaisa?: string;
+  totalAmountDisplay?: string;
+  lineItems: DeliveryLineItem[];
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
   client: EntityRef;
-  variant: VariantRef;
+  lineItems: OrderLineItem[];
+  deliveries: Delivery[];
   metersOrdered: number;
   metersDelivered: number;
   fulfillmentPercent: number;
@@ -26,21 +54,23 @@ export interface Order {
   status: 'PENDING_APPROVAL' | 'PENDING' | 'ONGOING' | 'COMPLETED';
   isOverdue: boolean;
   // Financial fields (only for FINANCE_HEAD/SUPER_ADMIN)
-  ratePerMeterPaisa?: number;
-  ratePerMeterDisplay?: string;
-  totalAmountPaisa?: number;
+  totalAmountPaisa?: string;
   totalAmountDisplay?: string;
-  clientOutstandingPaisa?: number;
+  clientOutstandingPaisa?: string;
   clientOutstandingDisplay?: string;
   createdAt: string;
   version: number;
 }
 
-export interface CreateOrderPayload {
-  clientId: string;
+export interface CreateOrderLineItem {
   variantId: string;
   metersOrdered: number;
   ratePerMeterPaisa: number;
+}
+
+export interface CreateOrderPayload {
+  clientId: string;
+  lineItems: CreateOrderLineItem[];
   deliveryDeadline: string;
 }
 

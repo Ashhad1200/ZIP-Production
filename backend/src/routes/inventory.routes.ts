@@ -54,12 +54,42 @@ router.put(
   inventoryController.updateRawMaterialThreshold.bind(inventoryController)
 );
 
+// FIFO Batches
+router.get(
+  '/raw-materials/batches',
+  authenticate,
+  rbac(...readRoles),
+  inventoryController.listBatches.bind(inventoryController)
+);
+
 // Reports
 router.get(
   '/consumption-report',
   authenticate,
   rbac(...readRoles),
   inventoryController.getConsumptionReport.bind(inventoryController)
+);
+
+// Electricity rates
+router.get(
+  '/electricity-rates',
+  authenticate,
+  rbac(...readRoles),
+  inventoryController.listElectricityRates.bind(inventoryController)
+);
+
+router.get(
+  '/electricity-rates/current',
+  authenticate,
+  rbac(...readRoles),
+  inventoryController.getCurrentElectricityRate.bind(inventoryController)
+);
+
+router.post(
+  '/electricity-rates',
+  authenticate,
+  rbac(...adminOnly),
+  inventoryController.createElectricityRate.bind(inventoryController)
 );
 
 export default router;

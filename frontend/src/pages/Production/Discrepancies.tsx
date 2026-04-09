@@ -96,7 +96,7 @@ function DiscrepanciesContent() {
       key: 'variant',
       header: 'Variant',
       hideOnMobile: true,
-      render: (row) => `${row.variant.code} – ${row.variant.name}`,
+      render: (row) => row.variant.map((v) => `${v.code} – ${v.name}`).join(', '),
     },
     {
       key: 'metersProduced',
@@ -165,7 +165,7 @@ function DiscrepanciesContent() {
       <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
         <div>
           <span className="block text-gray-400">Variant</span>
-          {row.variant.code}
+          {row.variant.map((v) => v.code).join(', ')}
         </div>
         <div>
           <span className="block text-gray-400">Meters</span>

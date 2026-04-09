@@ -191,6 +191,19 @@ export function GatePassForm() {
         if (!item.rate) {
           errs[`line_${i}_rate`] = 'No active rate found for this client-variant pair';
         }
+        // Check against linked order remaining meters per variant
+        if (orderId) {
+          const linkedOrder = orders.find((o) => o.id === orderId);
+          if (linkedOrder) {
+            const oli = linkedOrder.lineItems.find((li) => li.variantId === item.variantId);
+            if (oli) {
+              const remaining = oli.metersOrdered - oli.metersDelivered;
+              if (item.meters > remaining) {
+                errs[`line_${i}_order`] = `Exceeds order remaining (${remaining}m remaining for ${oli.variant.code})`;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -287,10 +300,15 @@ export function GatePassForm() {
           {clientId && (
             <SearchableSelect
               label="Linked Order (optional)"
-              options={orders.map((o) => ({
-                value: o.id,
-                label: `${o.orderNumber} — ${o.variant.code} (${o.metersDelivered}/${o.metersOrdered}m)`,
-              }))}
+              options={orders.map((o) => {
+                const variantSummary = o.lineItems
+                  .map((li) => `${li.variant.code} (${li.metersDelivered}/${li.metersOrdered}m)`)
+                  .join(', ');
+                return {
+                  value: o.id,
+                  label: `${o.orderNumber} — ${variantSummary}`,
+                };
+              })}
               value={orderId}
               onChange={setOrderId}
               placeholder="Select order..."
@@ -372,6 +390,9 @@ export function GatePassForm() {
                       )}
                       {errors[`line_${idx}_stock`] && (
                         <p className="text-xs text-red-600 mt-0.5">{errors[`line_${idx}_stock`]}</p>
+                      )}
+                      {errors[`line_${idx}_order`] && (
+                        <p className="text-xs text-red-600 mt-0.5">{errors[`line_${idx}_order`]}</p>
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">

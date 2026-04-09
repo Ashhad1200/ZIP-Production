@@ -6,7 +6,7 @@ import prisma from '../config/database';
  */
 export async function generateSequenceNumber(
   prefix: string,
-  model: 'gatePass' | 'order' | 'voucher' | 'journalEntry'
+  model: 'gatePass' | 'order' | 'voucher' | 'journalEntry' | 'salesReturn'
 ): Promise<string> {
   const year = new Date().getFullYear();
   const yearStr = String(year);
@@ -49,6 +49,15 @@ export async function generateSequenceNumber(
     });
     if (last) {
       lastNumber = parseInt(last.entryNumber.split('-').pop() || '0', 10);
+    }
+  } else if (model === 'salesReturn') {
+    const last = await prisma.salesReturn.findFirst({
+      where: { returnNumber: { startsWith: pattern } },
+      orderBy: { returnNumber: 'desc' },
+      select: { returnNumber: true },
+    });
+    if (last) {
+      lastNumber = parseInt(last.returnNumber.split('-').pop() || '0', 10);
     }
   }
 

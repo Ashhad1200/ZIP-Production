@@ -128,6 +128,70 @@ export class InventoryController {
       next(error);
     }
   }
+
+  // ─── FIFO Batch endpoints ───────────────────────────────────────────────────
+
+  async listBatches(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { grainTypeId, includeExhausted } = req.query;
+      const result = await inventoryService.listBatches({
+        grainTypeId: grainTypeId as string | undefined,
+        includeExhausted: includeExhausted === 'true',
+      });
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ─── Electricity Rate endpoints ─────────────────────────────────────────────
+
+  async listElectricityRates(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await inventoryService.listElectricityRates();
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getCurrentElectricityRate(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await inventoryService.getCurrentElectricityRate();
+      res.json({ data: result ?? null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createElectricityRate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { ratePaisaPerUnit, effectiveFrom, notes } = req.body;
+
+      if (ratePaisaPerUnit == null || !effectiveFrom) {
+        res.status(422).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Missing required fields: ratePaisaPerUnit, effectiveFrom',
+          },
+        });
+        return;
+      }
+
+      const result = await inventoryService.createElectricityRate(
+        {
+          ratePaisaPerUnit: BigInt(ratePaisaPerUnit),
+          effectiveFrom: effectiveFrom as string,
+          notes: notes as string | undefined,
+        },
+        req.user!.userId
+      );
+
+      res.status(201).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const inventoryController = new InventoryController();
