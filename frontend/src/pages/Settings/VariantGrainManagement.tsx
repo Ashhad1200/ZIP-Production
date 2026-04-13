@@ -1,12 +1,14 @@
 import { useState, useCallback, type FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Loader2, ArrowLeft } from 'lucide-react';
+import { Plus, Loader2, ArrowLeft, FlaskConical } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { Modal } from '../../components/ui/Modal';
 import { SearchableSelect, type SelectOption } from '../../components/forms/SearchableSelect';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
-import { settingsApi, type Variant, type GrainType } from '../../services/settings.api';
+import { settingsApi, type Variant, type GrainType, type Recipe } from '../../services/settings.api';
+import { packagingApi } from '../../services/inventory.api';
+import { formatPaisaToRupees } from '../../utils/currency';
 
 // ─── Variant Form ───────────────────────────────────────────────────────────
 
@@ -18,11 +20,13 @@ interface IngredientRow {
 interface VariantFormProps {
   variant?: Variant | null;
   grainOptions: SelectOption[];
+  packagingOptions: SelectOption[];
+  recipes: Recipe[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: VariantFormProps) {
+function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, onClose, onSuccess }: VariantFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!variant;
 
@@ -32,6 +36,14 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
   const [standardGramsPerMeter, setStandardGramsPerMeter] = useState(
     String(variant?.standardGramsPerMeter ?? ''),
   );
+  const [metersPerCarton, setMetersPerCarton] = useState(
+    variant?.metersPerCarton != null ? String(variant.metersPerCarton) : '',
+  );
+  const [packagingMaterialId, setPackagingMaterialId] = useState(
+    variant?.packagingMaterialId ?? '',
+  );
+  const [selectedRecipeId, setSelectedRecipeId] = useState(variant?.recipeId ?? '');
+  const usingRecipe = !!selectedRecipeId;
 
   // Ingredient rows — pre-fill from existing variant
   const [ingredients, setIngredients] = useState<IngredientRow[]>(() => {
@@ -46,6 +58,24 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
     }
     return [{ grainTypeId: '', ratioPercent: '100' }];
   });
+
+  const recipeOptions: SelectOption[] = recipes.filter((r) => r.isActive).map((r) => ({
+    value: r.id,
+    label: `${r.name} — ${r.ingredients.map((i) => `${i.grainType.code} ${Number(i.ratioPercent)}%`).join(' + ')}`,
+  }));
+
+  const handleRecipeChange = (recipeId: string) => {
+    setSelectedRecipeId(recipeId);
+    if (recipeId) {
+      const recipe = recipes.find((r) => r.id === recipeId);
+      if (recipe) {
+        setIngredients(recipe.ingredients.map((i) => ({
+          grainTypeId: i.grainTypeId,
+          ratioPercent: String(Number(i.ratioPercent)),
+        })));
+      }
+    }
+  };
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -85,7 +115,10 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
         code: code.trim(),
         name: name.trim(),
         standardGramsPerMeter: Number(standardGramsPerMeter),
-        ingredients: parsedIngredients(),
+        metersPerCarton: metersPerCarton ? Number(metersPerCarton) : undefined,
+        packagingMaterialId: packagingMaterialId || undefined,
+        recipeId: selectedRecipeId || undefined,
+        ingredients: usingRecipe ? undefined : parsedIngredients(),
         description: description.trim() || undefined,
       }),
     onSuccess: () => {
@@ -103,7 +136,10 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
       settingsApi.updateVariant(variant!.id, {
         name: name.trim(),
         standardGramsPerMeter: Number(standardGramsPerMeter),
-        ingredients: parsedIngredients(),
+        metersPerCarton: metersPerCarton ? Number(metersPerCarton) : null,
+        packagingMaterialId: packagingMaterialId || null,
+        recipeId: selectedRecipeId || null,
+        ingredients: usingRecipe ? undefined : parsedIngredients(),
         description: description.trim() || null,
       }),
     onSuccess: () => {
@@ -176,25 +212,74 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
           )}
         </div>
 
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Meters per Carton</label>
+          <input
+            type="number"
+            min={1}
+            value={metersPerCarton}
+            onChange={(e) => setMetersPerCarton(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            placeholder="e.g. 200 (optional)"
+          />
+          <p className="mt-1 text-xs text-gray-500">Used to convert finished goods stock to carton counts on gate passes</p>
+        </div>
+
+        <div>
+          <SearchableSelect
+            label="Packaging Material"
+            options={packagingOptions}
+            value={packagingMaterialId}
+            onChange={setPackagingMaterialId}
+            placeholder="Select packaging item used for this variant"
+            clearable
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Used for automatic packaging deduction when production is completed.
+          </p>
+        </div>
+
+        {/* Recipe Dropdown */}
+        <div>
+          <SearchableSelect
+            label="Recipe / Formula"
+            options={recipeOptions}
+            value={selectedRecipeId}
+            onChange={handleRecipeChange}
+            placeholder="Select a recipe to auto-fill ingredients…"
+            clearable
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Select a recipe to auto-fill seed ingredients. Leave empty for manual ingredient entry.
+          </p>
+        </div>
+
         {/* ── Seed Ingredients ── */}
         <div>
           <div className="mb-2 flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">
-              Seed Ingredients *
+              Seed Ingredients {!usingRecipe && '*'}
+              {usingRecipe && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                  <FlaskConical size={12} /> From recipe
+                </span>
+              )}
               <span className={`ml-2 text-xs font-normal ${Math.abs(totalRatio - 100) < 0.01 ? 'text-green-600' : 'text-orange-500'}`}>
                 Total: {totalRatio.toFixed(1)}%{Math.abs(totalRatio - 100) < 0.01 ? ' ✓' : ' (must be 100%)'}
               </span>
             </label>
-            <button
-              type="button"
-              onClick={addIngredient}
-              className="flex items-center gap-1 rounded-lg border border-dashed border-blue-400 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
-            >
-              <Plus size={12} /> Add Seed
-            </button>
+            {!usingRecipe && (
+              <button
+                type="button"
+                onClick={addIngredient}
+                className="flex items-center gap-1 rounded-lg border border-dashed border-blue-400 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+              >
+                <Plus size={12} /> Add Seed
+              </button>
+            )}
           </div>
 
-          <div className="space-y-2">
+          <div className={`space-y-2 ${usingRecipe ? 'opacity-75' : ''}`}>
             {ingredients.map((row, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <div className="flex-1">
@@ -204,6 +289,7 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
                     value={row.grainTypeId}
                     onChange={(v) => updateIngredient(idx, 'grainTypeId', v)}
                     placeholder="Select seed type"
+                    disabled={usingRecipe}
                   />
                 </div>
                 <div className="w-28 flex-shrink-0">
@@ -215,13 +301,14 @@ function VariantFormModal({ variant, grainOptions, onClose, onSuccess }: Variant
                       max={100}
                       value={row.ratioPercent}
                       onChange={(e) => updateIngredient(idx, 'ratioPercent', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-6 text-sm"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-6 text-sm disabled:bg-gray-50"
                       placeholder="100"
+                      disabled={usingRecipe}
                     />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
                   </div>
                 </div>
-                {ingredients.length > 1 && (
+                {!usingRecipe && ingredients.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeIngredient(idx)}
@@ -503,12 +590,29 @@ export function VariantGrainManagement() {
     queryFn: settingsApi.getGrainTypes,
   });
 
+  const { data: packagingResp, isLoading: loadingPackaging } = useQuery({
+    queryKey: ['packaging-materials'],
+    queryFn: packagingApi.listMaterials,
+  });
+
+  const { data: recipesResp } = useQuery({
+    queryKey: ['recipes'],
+    queryFn: settingsApi.getRecipes,
+  });
+
   const variants = variantsResp?.data ?? [];
   const grainTypes = grainsResp?.data ?? [];
+  const packagingMaterials = packagingResp?.data ?? [];
+  const recipes = recipesResp?.data ?? [];
 
   const grainOptions: SelectOption[] = grainTypes.map((g) => ({
     value: g.id,
     label: `${g.code} – ${g.name}`,
+  }));
+
+  const packagingOptions: SelectOption[] = packagingMaterials.map((m) => ({
+    value: m.id,
+    label: `${m.name} (${m.unit}) — ${formatPaisaToRupees(m.ratePerUnitPaisa)}/${m.unit}`,
   }));
 
   // ── Variant columns ─────────────────────────────────────────────────────
@@ -528,13 +632,29 @@ export function VariantGrainManagement() {
       render: (row) => {
         if (row.ingredients && row.ingredients.length > 0) {
           return (
-            <span className="text-xs text-gray-700">
-              {row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')}
-            </span>
+            <div>
+              {row.recipe && (
+                <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">
+                  <FlaskConical size={10} /> {row.recipe.name}
+                </span>
+              )}
+              <div className="text-xs text-gray-700">
+                {row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')}
+              </div>
+            </div>
           );
         }
         return row.grainType ? `${row.grainType.code} – ${row.grainType.name}` : '—';
       },
+    },
+    {
+      key: 'packagingMaterialId',
+      header: 'Packaging',
+      hideOnMobile: true,
+      render: (row) =>
+        row.packagingMaterial
+          ? `${row.packagingMaterial.name} (${row.packagingMaterial.unit})`
+          : '—',
     },
     {
       key: 'isActive',
@@ -586,6 +706,11 @@ export function VariantGrainManagement() {
             : row.grainType?.name ?? '—'}
         </span>
       </div>
+      {row.packagingMaterial && (
+        <div className="text-xs text-gray-500">
+          Packaging: {row.packagingMaterial.name} ({row.packagingMaterial.unit})
+        </div>
+      )}
     </div>
   );
 
@@ -659,7 +784,7 @@ export function VariantGrainManagement() {
     </div>
   );
 
-  const isLoading = loadingVariants || loadingGrains;
+  const isLoading = loadingVariants || loadingGrains || loadingPackaging;
 
   if (isLoading) {
     return (
@@ -753,6 +878,8 @@ export function VariantGrainManagement() {
       {showVariantForm && (
         <VariantFormModal
           grainOptions={grainOptions}
+          packagingOptions={packagingOptions}
+          recipes={recipes}
           onClose={() => setShowVariantForm(false)}
           onSuccess={() => setShowVariantForm(false)}
         />
@@ -761,6 +888,8 @@ export function VariantGrainManagement() {
         <VariantFormModal
           variant={editVariant}
           grainOptions={grainOptions}
+          packagingOptions={packagingOptions}
+          recipes={recipes}
           onClose={() => setEditVariant(null)}
           onSuccess={() => setEditVariant(null)}
         />

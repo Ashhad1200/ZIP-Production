@@ -7,6 +7,8 @@ import {
   Factory,
   Settings,
   Briefcase,
+  Truck,
+  FlaskConical,
 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 
@@ -33,6 +35,13 @@ const cards: SettingsCard[] = [
     path: '/settings/clients',
   },
   {
+    title: 'Vendors',
+    description: 'Manage raw material suppliers',
+    icon: <Truck size={24} />,
+    path: '/settings/vendors',
+    adminOnly: true,
+  },
+  {
     title: 'Companies',
     description: 'Manage companies used for voucher cheque accounts',
     icon: <Briefcase size={24} />,
@@ -44,6 +53,13 @@ const cards: SettingsCard[] = [
     description: 'Organise expense categories in a tree structure',
     icon: <FolderTree size={24} />,
     path: '/settings/expense-categories',
+    adminOnly: true,
+  },
+  {
+    title: 'Recipes / Formulas',
+    description: 'Create reusable grain-mix recipes for variants',
+    icon: <FlaskConical size={24} />,
+    path: '/settings/recipes',
     adminOnly: true,
   },
   {

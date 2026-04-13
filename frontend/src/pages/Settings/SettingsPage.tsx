@@ -4,9 +4,11 @@ import { CompanyManagement } from './CompanyManagement';
 import { ClientManagement } from './ClientManagement';
 import { ExpenseCategories } from './ExpenseCategories';
 import { VariantGrainManagement } from './VariantGrainManagement';
+import { RecipeManagement } from './RecipeManagement';
 import { PlantWorkerManagement } from './PlantWorkerManagement';
 import { SystemSettings } from './SystemSettings';
 import { SettingsOverview } from './SettingsOverview';
+import { VendorManagement } from './VendorManagement';
 
 export default function SettingsPage() {
   return (
@@ -15,7 +17,9 @@ export default function SettingsPage() {
       <Route path="users" element={<UserManagement />} />
       <Route path="companies" element={<CompanyManagement />} />
       <Route path="clients" element={<ClientManagement />} />
+      <Route path="vendors" element={<VendorManagement />} />
       <Route path="expense-categories" element={<ExpenseCategories />} />
+      <Route path="recipes" element={<RecipeManagement />} />
       <Route path="variants" element={<VariantGrainManagement />} />
       <Route path="plants" element={<PlantWorkerManagement />} />
       <Route path="system" element={<SystemSettings />} />

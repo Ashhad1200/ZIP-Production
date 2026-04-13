@@ -207,6 +207,9 @@ model ZipperVariant {
   name                  String
   description           String?
   standardGramsPerMeter Decimal
+  metersPerCarton       Int?    // Standard meters per carton for inventory conversion (P-02)
+  packagingMaterialId   String?
+  recipeId              String?
   // grainTypeId is kept for backward compat but is now nullable.
   // Use the `ingredients` relation for multi-seed mixing.
   grainTypeId           String?
@@ -223,6 +226,8 @@ model ZipperVariant {
   version   Int       @default(1)
 
   grainType          GrainType?           @relation(fields: [grainTypeId], references: [id])
+  packagingMaterial  PackagingMaterial?   @relation(fields: [packagingMaterialId], references: [id])
+  recipe             Recipe?              @relation(fields: [recipeId], references: [id])
   ingredients        VariantIngredient[]
   productionEntries  ProductionEntry[]
   shiftVariants      ProductionShiftVariant[]
@@ -232,6 +237,8 @@ model ZipperVariant {
   finishedGoodsStock FinishedGoodsStock?
   salesReturnLineItems SalesReturnLineItem[]
 
+  @@index([packagingMaterialId])
+  @@index([recipeId])
   @@index([grainTypeId])
   @@index([isDeleted])
   @@map("zipper_variants")
@@ -251,6 +258,44 @@ model VariantIngredient {
   @@unique([variantId, grainTypeId])
   @@index([grainTypeId])
   @@map("variant_ingredients")
+}
+
+// ─── 5c. Recipe (reusable grain-mix formula) ────────────────────────────────
+
+model Recipe {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  ingredients RecipeIngredient[]
+  variants    ZipperVariant[]
+
+  @@index([isDeleted])
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id           String  @id @default(uuid())
+  recipeId     String
+  grainTypeId  String
+  ratioPercent Decimal // 0-100; all rows for a recipe must sum to 100
+
+  recipe    Recipe    @relation(fields: [recipeId], references: [id])
+  grainType GrainType @relation(fields: [grainTypeId], references: [id])
+
+  @@unique([recipeId, grainTypeId])
+  @@index([grainTypeId])
+  @@map("recipe_ingredients")
 }
 
 // ─── 6. GrainType ───────────────────────────────────────────────────────────
@@ -276,6 +321,7 @@ model GrainType {
 
   zipperVariants       ZipperVariant[]
   variantIngredients   VariantIngredient[]
+  recipeIngredients    RecipeIngredient[]
   rawMaterialStock     RawMaterialStock?
   rawMaterialPurchases RawMaterialPurchase[]
   rawMaterialBatches   RawMaterialBatch[]
@@ -399,6 +445,7 @@ model ScrapSale {
 model RawMaterialPurchase {
   id               String         @id @default(uuid())
   grainTypeId      String
+  vendorId         String?        // Vendor who supplied this purchase (PU-01 + PU-02)
   numberOfBags     Decimal
   ratePerBagPaisa  BigInt
   totalAmountPaisa BigInt
@@ -417,13 +464,42 @@ model RawMaterialPurchase {
   version   Int       @default(1)
 
   grainType    GrainType          @relation(fields: [grainTypeId], references: [id])
+  vendor       Vendor?            @relation(fields: [vendorId], references: [id])
   journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
   batch        RawMaterialBatch?
 
   @@index([grainTypeId])
+  @@index([vendorId])
   @@index([purchaseDate])
   @@index([isDeleted])
   @@map("raw_material_purchases")
+}
+
+// ─── 10a. Vendor (grain bag suppliers) ─────────────────────────────────────
+
+model Vendor {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  contactName String?
+  phone       String?
+  address     String?
+  grainTypes  String? // Comma-separated grain type codes they supply
+  isActive    Boolean @default(true)
+
+  // audit fields
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedBy String?
+  updatedAt DateTime  @updatedAt
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  version   Int       @default(1)
+
+  purchases RawMaterialPurchase[]
+
+  @@index([isDeleted])
+  @@map("vendors")
 }
 
 // ─── 10b. RawMaterialBatch (FIFO batch costing) ────────────────────────────
@@ -541,13 +617,14 @@ model FinishedGoodsStock {
 // ─── 13. Client ─────────────────────────────────────────────────────────────
 
 model Client {
-  id               String  @id @default(uuid())
-  name             String  @unique
-  contactPerson    String?
-  phone            String?
-  address          String?
-  paymentCycleDays Int     @default(30)
-  accountId        String? @unique
+  id                  String  @id @default(uuid())
+  name                String  @unique
+  contactPerson       String?
+  phone               String?
+  address             String?
+  paymentCycleDays    Int     @default(30)
+  accountId           String? @unique
+  openingBalancePaisa BigInt  @default(0) // Day-0 outstanding balance (F-01)
 
   // audit fields
   createdBy String
@@ -1054,4 +1131,60 @@ model PayrollRecord {
   @@unique([workerId, month, year])
   @@index([year, month])
   @@map("payroll_records")
+}
+
+// ─── 30. MonthlyOverhead ─────────────────────────────────────────────────────
+model MonthlyOverhead {
+  id                  String   @id @default(uuid())
+  year                Int
+  month               Int      // 1-12
+  laborPaisa          BigInt   @default(0)
+  rentPaisa           BigInt   @default(0)
+  transportationPaisa BigInt   @default(0)
+  packingPaisa        BigInt   @default(0)
+  miscellaneousPaisa  BigInt   @default(0)
+  notes               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+  @@index([year, month])
+  @@map("monthly_overheads")
+}
+
+
+// ─── Packaging Inventory ────────────────────────────────────────────────────
+model PackagingMaterial {
+  id           String   @id @default(uuid())
+  name         String
+  unit         String   @default("pcs")  // pcs, rolls, kg, etc.
+  currentStock Int      @default(0)
+  ratePerUnitPaisa BigInt @default(0)
+  lowStockThreshold Int?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  adjustments  PackagingStockAdjustment[]
+  variants     ZipperVariant[]
+  @@map("packaging_materials")
+}
+
+model PackagingStockAdjustment {
+  id          String   @id @default(uuid())
+  materialId  String
+  quantity    Int      // positive = add, negative = use
+  type        String   // PURCHASE, CONSUMPTION, ADJUSTMENT
+  unitRatePaisa BigInt?
+  totalCostPaisa BigInt?
+  referenceType String?
+  referenceId   String?
+  notes       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  material    PackagingMaterial @relation(fields: [materialId], references: [id])
+  @@index([materialId])
+  @@index([referenceType, referenceId])
+  @@map("packaging_stock_adjustments")
 }

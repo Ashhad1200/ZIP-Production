@@ -77,7 +77,7 @@ export class SettingsController {
 
   async createClient(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { name, contactPerson, phone, address, paymentCycleDays, rates } = req.body;
+      const { name, contactPerson, phone, address, paymentCycleDays, rates, openingBalancePaisa } = req.body;
       if (!name) {
         res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'name is required' } });
         return;
@@ -93,6 +93,7 @@ export class SettingsController {
             phone,
             address,
             ...(paymentCycleDays !== undefined && { paymentCycleDays }),
+            ...(openingBalancePaisa !== undefined && { openingBalancePaisa: BigInt(openingBalancePaisa) }),
             createdBy: userId,
           },
         });
@@ -124,7 +125,7 @@ export class SettingsController {
   async updateClient(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, contactPerson, phone, address, paymentCycleDays } = req.body;
+      const { name, contactPerson, phone, address, paymentCycleDays, openingBalancePaisa } = req.body;
       const client = await prisma.client.update({
         where: { id },
         data: {
@@ -133,6 +134,7 @@ export class SettingsController {
           ...(phone !== undefined && { phone }),
           ...(address !== undefined && { address }),
           ...(paymentCycleDays !== undefined && { paymentCycleDays }),
+          ...(openingBalancePaisa !== undefined && { openingBalancePaisa: BigInt(openingBalancePaisa) }),
           updatedBy: req.user!.userId,
         },
       });
@@ -266,13 +268,22 @@ export class SettingsController {
         where: { isDeleted: false },
         include: {
           grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
+          packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
+          recipe: { select: { id: true, name: true } },
           ingredients: {
             include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
             orderBy: { ratioPercent: 'desc' },
           },
         },
       });
-      res.json({ data: variants });
+      res.json({
+        data: variants.map((variant) => ({
+          ...variant,
+          packagingMaterial: variant.packagingMaterial
+            ? { ...variant.packagingMaterial, ratePerUnitPaisa: Number(variant.packagingMaterial.ratePerUnitPaisa) }
+            : null,
+        })),
+      });
     } catch (error) {
       next(error);
     }
@@ -280,21 +291,40 @@ export class SettingsController {
 
   async createVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { code, name, standardGramsPerMeter, description, ingredients } = req.body;
-      // ingredients: [{ grainTypeId: string; ratioPercent: number }]
+      const { code, name, standardGramsPerMeter, description, ingredients, recipeId, packagingMaterialId } = req.body;
       if (!code || !name || standardGramsPerMeter == null) {
         res.status(422).json({
           error: { code: 'VALIDATION_ERROR', message: 'code, name, and standardGramsPerMeter are required' },
         });
         return;
       }
-      if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
-        res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient (grain type) is required' },
+
+      // If recipeId is provided, load recipe ingredients; otherwise require manual ingredients
+      let resolvedIngredients: { grainTypeId: string; ratioPercent: number }[] = [];
+      if (recipeId) {
+        const recipe = await prisma.recipe.findUnique({
+          where: { id: recipeId },
+          include: { ingredients: true },
         });
-        return;
+        if (!recipe || recipe.isDeleted) {
+          res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Recipe not found' } });
+          return;
+        }
+        resolvedIngredients = recipe.ingredients.map((i) => ({
+          grainTypeId: i.grainTypeId,
+          ratioPercent: Number(i.ratioPercent),
+        }));
+      } else {
+        if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+          res.status(422).json({
+            error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient (grain type) or a recipe is required' },
+          });
+          return;
+        }
+        resolvedIngredients = ingredients;
       }
-      const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+
+      const totalRatio = resolvedIngredients.reduce((s, i) => s + Number(i.ratioPercent), 0);
       if (Math.abs(totalRatio - 100) > 0.01) {
         res.status(422).json({
           error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
@@ -307,22 +337,34 @@ export class SettingsController {
           code,
           name,
           standardGramsPerMeter,
+          metersPerCarton: req.body.metersPerCarton ?? null,
+          packagingMaterialId: packagingMaterialId ?? null,
+          recipeId: recipeId ?? null,
           description,
           createdBy: req.user!.userId,
           ingredients: {
-            create: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+            create: resolvedIngredients.map((i) => ({
               grainTypeId: i.grainTypeId,
               ratioPercent: i.ratioPercent,
             })),
           },
         },
         include: {
+          recipe: { select: { id: true, name: true } },
+          packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
           ingredients: {
             include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
           },
         },
       });
-      res.status(201).json({ data: variant });
+      res.status(201).json({
+        data: {
+          ...variant,
+          packagingMaterial: variant.packagingMaterial
+            ? { ...variant.packagingMaterial, ratePerUnitPaisa: Number(variant.packagingMaterial.ratePerUnitPaisa) }
+            : null,
+        },
+      });
     } catch (error) {
       next(error);
     }
@@ -331,15 +373,44 @@ export class SettingsController {
   async updateVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, standardGramsPerMeter, description, isActive, ingredients } = req.body;
+      const { name, standardGramsPerMeter, metersPerCarton, packagingMaterialId, description, isActive, ingredients, recipeId } = req.body;
 
-      // Validate ingredient ratios if provided
-      if (ingredients !== undefined) {
-        if (!Array.isArray(ingredients) || ingredients.length === 0) {
+      // Resolve ingredients: if recipeId changed, re-sync from recipe
+      let resolvedIngredients: { grainTypeId: string; ratioPercent: number }[] | undefined;
+      let newRecipeId: string | null | undefined;
+
+      if (recipeId !== undefined) {
+        newRecipeId = recipeId;
+        if (recipeId) {
+          const recipe = await prisma.recipe.findUnique({
+            where: { id: recipeId },
+            include: { ingredients: true },
+          });
+          if (!recipe || recipe.isDeleted) {
+            res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Recipe not found' } });
+            return;
+          }
+          resolvedIngredients = recipe.ingredients.map((i) => ({
+            grainTypeId: i.grainTypeId,
+            ratioPercent: Number(i.ratioPercent),
+          }));
+        } else {
+          // Recipe cleared — keep existing manual ingredients unless new ones provided
+          if (ingredients !== undefined) {
+            resolvedIngredients = ingredients;
+          }
+        }
+      } else if (ingredients !== undefined) {
+        resolvedIngredients = ingredients;
+      }
+
+      // Validate ingredient ratios if we're replacing
+      if (resolvedIngredients !== undefined) {
+        if (!Array.isArray(resolvedIngredients) || resolvedIngredients.length === 0) {
           res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient is required' } });
           return;
         }
-        const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+        const totalRatio = resolvedIngredients.reduce((s, i) => s + Number(i.ratioPercent), 0);
         if (Math.abs(totalRatio - 100) > 0.01) {
           res.status(422).json({
             error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
@@ -349,11 +420,10 @@ export class SettingsController {
       }
 
       const variant = await prisma.$transaction(async (tx) => {
-        if (ingredients !== undefined) {
-          // Replace all ingredients atomically
+        if (resolvedIngredients !== undefined) {
           await tx.variantIngredient.deleteMany({ where: { variantId: id } });
           await tx.variantIngredient.createMany({
-            data: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+            data: resolvedIngredients.map((i) => ({
               variantId: id,
               grainTypeId: i.grainTypeId,
               ratioPercent: i.ratioPercent,
@@ -365,11 +435,16 @@ export class SettingsController {
           data: {
             ...(name !== undefined && { name }),
             ...(standardGramsPerMeter !== undefined && { standardGramsPerMeter }),
+            ...(metersPerCarton !== undefined && { metersPerCarton }),
+            ...(packagingMaterialId !== undefined && { packagingMaterialId }),
+            ...(newRecipeId !== undefined && { recipeId: newRecipeId }),
             ...(description !== undefined && { description }),
             ...(isActive !== undefined && { isActive }),
             updatedBy: req.user!.userId,
           },
           include: {
+            recipe: { select: { id: true, name: true } },
+            packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
             ingredients: {
               include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
               orderBy: { ratioPercent: 'desc' },
@@ -377,7 +452,14 @@ export class SettingsController {
           },
         });
       });
-      res.json({ data: variant });
+      res.json({
+        data: {
+          ...variant,
+          packagingMaterial: variant.packagingMaterial
+            ? { ...variant.packagingMaterial, ratePerUnitPaisa: Number(variant.packagingMaterial.ratePerUnitPaisa) }
+            : null,
+        },
+      });
     } catch (error) {
       next(error);
     }
@@ -591,6 +673,142 @@ export class SettingsController {
         create: { key, value },
       });
       res.json({ data: setting });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ─── Recipe Management ──────────────────────────────────────────────────────
+
+  async listRecipes(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const recipes = await prisma.recipe.findMany({
+        where: { isDeleted: false },
+        include: {
+          ingredients: {
+            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            orderBy: { ratioPercent: 'desc' },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
+      res.json({ data: recipes });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createRecipe(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { name, description, ingredients } = req.body;
+      if (!name) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Recipe name is required' } });
+        return;
+      }
+      if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient is required' } });
+        return;
+      }
+      const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+      if (Math.abs(totalRatio - 100) > 0.01) {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
+        });
+        return;
+      }
+
+      const recipe = await prisma.recipe.create({
+        data: {
+          name,
+          description: description ?? null,
+          createdBy: req.user!.userId,
+          ingredients: {
+            create: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+              grainTypeId: i.grainTypeId,
+              ratioPercent: i.ratioPercent,
+            })),
+          },
+        },
+        include: {
+          ingredients: {
+            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+          },
+        },
+      });
+      res.status(201).json({ data: recipe });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateRecipe(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const { name, description, isActive, ingredients } = req.body;
+
+      if (ingredients !== undefined) {
+        if (!Array.isArray(ingredients) || ingredients.length === 0) {
+          res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient is required' } });
+          return;
+        }
+        const totalRatio = ingredients.reduce((s: number, i: { ratioPercent: number }) => s + Number(i.ratioPercent), 0);
+        if (Math.abs(totalRatio - 100) > 0.01) {
+          res.status(422).json({
+            error: { code: 'VALIDATION_ERROR', message: `Ingredient ratios must sum to 100%. Currently: ${totalRatio.toFixed(2)}%` },
+          });
+          return;
+        }
+      }
+
+      const recipe = await prisma.$transaction(async (tx) => {
+        if (ingredients !== undefined) {
+          await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
+          await tx.recipeIngredient.createMany({
+            data: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+              recipeId: id,
+              grainTypeId: i.grainTypeId,
+              ratioPercent: i.ratioPercent,
+            })),
+          });
+        }
+        return tx.recipe.update({
+          where: { id },
+          data: {
+            ...(name !== undefined && { name }),
+            ...(description !== undefined && { description }),
+            ...(isActive !== undefined && { isActive }),
+            updatedBy: req.user!.userId,
+          },
+          include: {
+            ingredients: {
+              include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+              orderBy: { ratioPercent: 'desc' },
+            },
+          },
+        });
+      });
+      res.json({ data: recipe });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteRecipe(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      // Check if any variant uses this recipe
+      const usageCount = await prisma.zipperVariant.count({ where: { recipeId: id, isDeleted: false } });
+      if (usageCount > 0) {
+        res.status(422).json({
+          error: { code: 'IN_USE', message: `Cannot delete recipe — it is used by ${usageCount} variant(s). Unlink them first.` },
+        });
+        return;
+      }
+      await prisma.recipe.update({
+        where: { id },
+        data: { isDeleted: true, deletedAt: new Date(), deletedBy: req.user!.userId },
+      });
+      res.json({ data: { message: 'Recipe deleted' } });
     } catch (error) {
       next(error);
     }

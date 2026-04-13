@@ -18,6 +18,7 @@ export interface Client {
   phone: string | null;
   address: string | null;
   paymentCycleDays: number;
+  openingBalancePaisa?: number;
   clientRates?: {
     id: string;
     variantId: string;
@@ -47,15 +48,43 @@ export interface VariantIngredient {
   grainType: { id: string; code: string; name: string; bagWeightGrams: number };
 }
 
+export interface RecipeIngredient {
+  id: string;
+  recipeId: string;
+  grainTypeId: string;
+  ratioPercent: number;
+  grainType: { id: string; code: string; name: string; bagWeightGrams: number };
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  ingredients: RecipeIngredient[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Variant {
   id: string;
   code: string;
   name: string;
   description: string | null;
   standardGramsPerMeter: number;
+  metersPerCarton: number | null;
+  packagingMaterialId: string | null;
+  recipeId: string | null;
   grainTypeId: string | null;
   isActive: boolean;
   grainType?: { id: string; code: string; name: string; bagWeightGrams: number } | null;
+  packagingMaterial?: {
+    id: string;
+    name: string;
+    unit: string;
+    ratePerUnitPaisa: number;
+  } | null;
+  recipe?: { id: string; name: string } | null;
   ingredients: VariantIngredient[];
 }
 
@@ -101,6 +130,17 @@ export interface SystemSetting {
   description: string | null;
 }
 
+export interface Vendor {
+  id: string;
+  name: string;
+  contactName: string | null;
+  phone: string | null;
+  address: string | null;
+  grainTypes: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 // ─── API Methods ────────────────────────────────────────────────────────────
 
 export const settingsApi = {
@@ -125,6 +165,7 @@ export const settingsApi = {
     phone?: string;
     address?: string;
     paymentCycleDays?: number;
+    openingBalancePaisa?: number;
     rates?: { variantId: string; ratePerMeterPaisa: number }[];
   }) => api.post<{ data: Client }>('/settings/clients', data).then((r) => r.data),
   updateClient: (id: string, data: Partial<Client>) =>
@@ -164,18 +205,43 @@ export const settingsApi = {
     code: string;
     name: string;
     standardGramsPerMeter: number;
-    ingredients: { grainTypeId: string; ratioPercent: number }[];
+    metersPerCarton?: number;
+    packagingMaterialId?: string;
+    recipeId?: string;
+    ingredients?: { grainTypeId: string; ratioPercent: number }[];
     description?: string;
   }) =>
     api.post<{ data: Variant }>('/settings/variants', data).then((r) => r.data),
   updateVariant: (id: string, data: {
     name?: string;
     standardGramsPerMeter?: number;
+    metersPerCarton?: number | null;
+    packagingMaterialId?: string | null;
+    recipeId?: string | null;
     description?: string | null;
     isActive?: boolean;
     ingredients?: { grainTypeId: string; ratioPercent: number }[];
   }) =>
     api.put<{ data: Variant }>(`/settings/variants/${id}`, data).then((r) => r.data),
+
+  // Recipes
+  getRecipes: () =>
+    api.get<{ data: Recipe[] }>('/settings/recipes').then((r) => r.data),
+  createRecipe: (data: {
+    name: string;
+    description?: string;
+    ingredients: { grainTypeId: string; ratioPercent: number }[];
+  }) =>
+    api.post<{ data: Recipe }>('/settings/recipes', data).then((r) => r.data),
+  updateRecipe: (id: string, data: {
+    name?: string;
+    description?: string;
+    isActive?: boolean;
+    ingredients?: { grainTypeId: string; ratioPercent: number }[];
+  }) =>
+    api.put<{ data: Recipe }>(`/settings/recipes/${id}`, data).then((r) => r.data),
+  deleteRecipe: (id: string) =>
+    api.delete(`/settings/recipes/${id}`).then((r) => r.data),
 
   // Grain Types
   getGrainTypes: () =>
@@ -239,4 +305,14 @@ export const settingsApi = {
     api
       .put<{ data: SystemSetting }>(`/settings/system/${key}`, { value })
       .then((r) => r.data),
+
+  // Vendors
+  getVendors: (includeInactive = false) =>
+    api.get<{ data: Vendor[] }>('/vendors', { params: { includeInactive } }).then((r) => r.data),
+  createVendor: (data: { name: string; contactName?: string; phone?: string; address?: string; grainTypes?: string }) =>
+    api.post<{ data: Vendor }>('/vendors', data).then((r) => r.data),
+  updateVendor: (id: string, data: Partial<Vendor>) =>
+    api.put<{ data: Vendor }>(`/vendors/${id}`, data).then((r) => r.data),
+  deleteVendor: (id: string) =>
+    api.delete(`/vendors/${id}`).then((r) => r.data),
 };

@@ -35,6 +35,12 @@ router.get('/variants', authenticate, rbac(...adminOnly), settingsController.lis
 router.post('/variants', authenticate, rbac(...adminOnly), settingsController.createVariant.bind(settingsController));
 router.put('/variants/:id', authenticate, rbac(...adminOnly), settingsController.updateVariant.bind(settingsController));
 
+// Recipes
+router.get('/recipes', authenticate, rbac(...adminOnly), settingsController.listRecipes.bind(settingsController));
+router.post('/recipes', authenticate, rbac(...adminOnly), settingsController.createRecipe.bind(settingsController));
+router.put('/recipes/:id', authenticate, rbac(...adminOnly), settingsController.updateRecipe.bind(settingsController));
+router.delete('/recipes/:id', authenticate, rbac(...adminOnly), settingsController.deleteRecipe.bind(settingsController));
+
 // Grain types
 router.get('/grain-types', authenticate, rbac(...adminOnly), settingsController.listGrainTypes.bind(settingsController));
 router.post('/grain-types', authenticate, rbac(...adminOnly), settingsController.createGrainType.bind(settingsController));
