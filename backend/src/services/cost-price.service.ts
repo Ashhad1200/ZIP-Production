@@ -11,6 +11,20 @@ import prisma from '../config/database';
 import { formatPaisaToRupees } from '../utils/currency';
 import { toISODate } from '../utils/date';
 import { inventoryService } from './inventory.service';
+import { monthlyOverheadService } from './monthly-overhead.service';
+
+export interface IngredientCostBreakdown {
+  grainTypeName: string;
+  grainTypeCode: string;
+  standardRatioPercent: number; // what the recipe says
+  actualBagsConsumed: number;
+  actualCostPaisa: number;
+  actualCostDisplay: string;
+}
+
+export interface RecipeInfo {
+  ingredients: { grainTypeName: string; grainTypeCode: string; ratioPercent: number }[];
+}
 
 export interface ShiftCostBreakdown {
   productionEntryId: string;
@@ -19,6 +33,12 @@ export interface ShiftCostBreakdown {
   shift: string;
   variant: string;
   metersProduced: number;
+
+  // Recipe / formula for this variant
+  recipe: RecipeInfo | null;
+
+  // Per-ingredient cost breakdown
+  ingredientCosts: IngredientCostBreakdown[];
 
   electricityCostPaisa: bigint;
   electricityUnitsConsumed: number;
@@ -30,15 +50,54 @@ export interface ShiftCostBreakdown {
   weightedAvgBagPricePaisa: number;
   rawMaterialCostDisplay: string;
 
+  packagingCostPaisa: bigint;
+  packagingUnitsConsumed: number;
+  weightedAvgPackagingRatePaisa: number;
+  packagingCostDisplay: string;
+
   laborCostPaisa: bigint;
   workerCount: number;
   laborCostDisplay: string;
 
+  // Monthly overhead allocation (distributed per meter)
+  overheadLaborPaisa: bigint;
+  overheadRentPaisa: bigint;
+  overheadTransportationPaisa: bigint;
+  overheadPackingPaisa: bigint;
+  overheadMiscellaneousPaisa: bigint;
+  overheadTotalPaisa: bigint;
+  overheadPerMeterPaisa: number;
+  overheadLaborDisplay: string;
+  overheadRentDisplay: string;
+  overheadTransportationDisplay: string;
+  overheadPackingDisplay: string;
+  overheadMiscellaneousDisplay: string;
+  overheadTotalDisplay: string;
+  overheadPerMeterDisplay: string;
+  monthlyTotalMeters: number; // total meters produced in the same month (for overhead allocation)
+
+  // Scrap credit (reduces total cost)
+  scrapWeightGrams: number;
+  scrapRatePerKgPaisa: bigint;
+  scrapCreditPaisa: bigint;
+  scrapCreditDisplay: string;
+
+  // Total before and after scrap credit
+  totalCostBeforeScrapPaisa: bigint;
+  totalCostBeforeScrapDisplay: string;
   totalCostPaisa: bigint;
   totalCostDisplay: string;
 
   costPerMeterPaisa: number;
   costPerMeterDisplay: string;
+
+  // Percentage breakdown (each component as % of total cost before scrap)
+  rawMaterialPct: number;
+  electricityPct: number;
+  laborPct: number;
+  packagingPct: number;
+  overheadPct: number;
+  scrapCreditPct: number;
 }
 
 export class CostPriceService {
@@ -58,7 +117,12 @@ export class CostPriceService {
                 code: true,
                 name: true,
                 grainTypeId: true,
-                grainType: { select: { bagWeightGrams: true } },
+                packagingMaterialId: true,
+                standardGramsPerMeter: true,
+                grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
+                ingredients: {
+                  include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+                },
               },
             },
           },
@@ -69,7 +133,7 @@ export class CostPriceService {
           },
         },
         batchConsumptions: {
-          include: { batch: true },
+          include: { batch: { include: { grainType: { select: { id: true, code: true, name: true } } } } },
         },
       },
     });
@@ -77,10 +141,36 @@ export class CostPriceService {
     if (!entry || !entry.metersProduced) return null;
 
     // Safe cast: batchConsumptions is from Prisma include, type may be inferred as never in strict mode
-    type BatchConsumption = { totalCostPaisa: bigint; bagsConsumed: { toNumber: () => number } | number | string };
+    type BatchConsumption = {
+      totalCostPaisa: bigint;
+      bagsConsumed: { toNumber: () => number } | number | string;
+      batch: { grainTypeId: string; grainType: { id: string; code: string; name: string } };
+    };
     const batchConsumptions = (entry.batchConsumptions as unknown as BatchConsumption[]) ?? [];
 
     const entryDate = entry.date;
+
+    // ─── Build recipe info from variant ingredients ───────────────────────
+    const primarySV = entry.shiftVariants[0];
+    type VariantWithIngredients = typeof primarySV extends undefined ? never : typeof primarySV & {
+      variant: typeof primarySV.variant & {
+        ingredients?: { grainTypeId: string; ratioPercent: number | { toNumber?: () => number }; grainType: { id: string; code: string; name: string; bagWeightGrams: number } }[];
+      };
+    };
+    const variantData = primarySV as unknown as VariantWithIngredients | undefined;
+    const variantIngredients = (variantData?.variant as { ingredients?: { grainTypeId: string; ratioPercent: number | { toNumber?: () => number }; grainType: { id: string; code: string; name: string; bagWeightGrams: number } }[] })?.ingredients ?? [];
+
+    const recipe: RecipeInfo | null = variantIngredients.length > 0
+      ? {
+          ingredients: variantIngredients.map((i) => ({
+            grainTypeName: i.grainType.name,
+            grainTypeCode: i.grainType.code,
+            ratioPercent: typeof i.ratioPercent === 'number' ? i.ratioPercent : Number(i.ratioPercent),
+          })),
+        }
+      : primarySV?.variant.grainType
+        ? { ingredients: [{ grainTypeName: primarySV.variant.grainType.name, grainTypeCode: primarySV.variant.grainType.code, ratioPercent: 100 }] }
+        : null;
 
     // ─── Electricity cost ─────────────────────────────────────────────────
     const electricityUnits = entry.electricityUnitsConsumed
@@ -98,28 +188,42 @@ export class CostPriceService {
     let rawMaterialCostPaisa = 0n;
     let totalBagsConsumed = 0;
 
+    // Per-ingredient cost tracking (group batch consumptions by grain type)
+    const ingredientCostMap = new Map<string, { name: string; code: string; bags: number; costPaisa: bigint }>();
+
     if (batchConsumptions.length > 0) {
       for (const bc of batchConsumptions) {
         rawMaterialCostPaisa += bc.totalCostPaisa;
         const bags = typeof bc.bagsConsumed === 'number' ? bc.bagsConsumed : Number(bc.bagsConsumed);
         totalBagsConsumed += bags;
+
+        // Group by grain type for per-ingredient breakdown
+        const gtId = bc.batch.grainTypeId;
+        const existing = ingredientCostMap.get(gtId);
+        if (existing) {
+          existing.bags += bags;
+          existing.costPaisa += bc.totalCostPaisa;
+        } else {
+          ingredientCostMap.set(gtId, {
+            name: bc.batch.grainType.name,
+            code: bc.batch.grainType.code,
+            bags,
+            costPaisa: bc.totalCostPaisa,
+          });
+        }
       }
     } else {
       // Fallback: estimate from grams/meter × meters across all shift variants / bag weight × avg purchase price
-      const primarySV = entry.shiftVariants[0];
       if (primarySV) {
-        // Use ingredients' first grain or fallback to legacy grainType
-        const primaryIngredient = (primarySV.variant as { ingredients?: { grainType: { bagWeightGrams: number }; grainTypeId: string }[] }).ingredients?.[0];
-        const bagWeightGrams = primaryIngredient?.grainType?.bagWeightGrams ?? primarySV.variant.grainType?.bagWeightGrams ?? 25000;
-        const primaryGrainTypeId = primaryIngredient?.grainTypeId ?? primarySV.variant.grainTypeId;
+        const bagWeightGrams = variantIngredients[0]?.grainType?.bagWeightGrams
+          ?? primarySV.variant.grainType?.bagWeightGrams ?? 25000;
+        const primaryGrainTypeId = variantIngredients[0]?.grainTypeId ?? primarySV.variant.grainTypeId;
 
-        // Sum (gramsPerMeter × meters) across all shift variants
         for (const sv of entry.shiftVariants) {
           const gpm = sv.gramsPerMeter ? Number(sv.gramsPerMeter) : 0;
           totalBagsConsumed += (gpm * sv.metersProduced) / bagWeightGrams;
         }
 
-        // Use most recent batch price for primary grain type as fallback
         const latestPurchase = primaryGrainTypeId ? await prisma.rawMaterialBatch.findFirst({
           where: { grainTypeId: primaryGrainTypeId },
           orderBy: { purchaseDate: 'desc' },
@@ -132,9 +236,67 @@ export class CostPriceService {
       }
     }
 
+    // Build per-ingredient cost breakdown with standard ratio comparison
+    const recipeIngredients = recipe?.ingredients ?? [];
+    const ingredientCosts: IngredientCostBreakdown[] = [];
+
+    // Add entries from actual consumption
+    for (const [, data] of ingredientCostMap) {
+      const standardEntry = recipeIngredients.find((r) => r.grainTypeCode === data.code);
+      ingredientCosts.push({
+        grainTypeName: data.name,
+        grainTypeCode: data.code,
+        standardRatioPercent: standardEntry?.ratioPercent ?? 0,
+        actualBagsConsumed: data.bags,
+        actualCostPaisa: Number(data.costPaisa),
+        actualCostDisplay: formatPaisaToRupees(data.costPaisa),
+      });
+    }
+
+    // Add recipe ingredients with zero actual consumption (if any were not consumed)
+    for (const ri of recipeIngredients) {
+      if (!ingredientCosts.find((ic) => ic.grainTypeCode === ri.grainTypeCode)) {
+        ingredientCosts.push({
+          grainTypeName: ri.grainTypeName,
+          grainTypeCode: ri.grainTypeCode,
+          standardRatioPercent: ri.ratioPercent,
+          actualBagsConsumed: 0,
+          actualCostPaisa: 0,
+          actualCostDisplay: formatPaisaToRupees(0n),
+        });
+      }
+    }
+
     const weightedAvgBagPricePaisa =
       totalBagsConsumed > 0
         ? Number(rawMaterialCostPaisa) / totalBagsConsumed
+        : 0;
+
+    // ─── Packaging cost (from production-linked packaging adjustments) ──────
+    const packagingAdjustments = await prisma.packagingStockAdjustment.findMany({
+      where: {
+        referenceType: 'ProductionEntry',
+        referenceId: entry.id,
+      },
+      select: {
+        quantity: true,
+        totalCostPaisa: true,
+        unitRatePaisa: true,
+      },
+    });
+
+    let packagingCostPaisa = 0n;
+    let packagingUnitsConsumed = 0;
+    for (const adjustment of packagingAdjustments) {
+      if (adjustment.quantity < 0) {
+        packagingUnitsConsumed += Math.abs(adjustment.quantity);
+      }
+      packagingCostPaisa += adjustment.totalCostPaisa ?? 0n;
+    }
+
+    const weightedAvgPackagingRatePaisa =
+      packagingUnitsConsumed > 0
+        ? Number(packagingCostPaisa) / packagingUnitsConsumed
         : 0;
 
     // ─── Labor cost (sum of worker shift costs) ───────────────────────────
@@ -145,10 +307,89 @@ export class CostPriceService {
       }
     }
 
+    // ─── Monthly overhead allocation ──────────────────────────────────────
+    const entryYear = entry.date.getFullYear();
+    const entryMonth = entry.date.getMonth() + 1; // 1-12
+
+    const overheadBreakdown = await monthlyOverheadService.getBreakdownForMonth(entryYear, entryMonth);
+    const effectivePackingOverheadPaisa =
+      packagingUnitsConsumed > 0 ? 0n : overheadBreakdown.packingPaisa;
+    const effectiveOverheadTotalPaisa =
+      overheadBreakdown.laborPaisa +
+      overheadBreakdown.rentPaisa +
+      overheadBreakdown.transportationPaisa +
+      effectivePackingOverheadPaisa +
+      overheadBreakdown.miscellaneousPaisa;
+
+    // Total meters produced in this calendar month (for overhead allocation)
+    const monthStart = new Date(entryYear, entryMonth - 1, 1);
+    const monthEnd = new Date(entryYear, entryMonth, 1);
+    const monthlyMetersAgg = await prisma.productionEntry.aggregate({
+      _sum: { metersProduced: true },
+      where: {
+        isDeleted: false,
+        status: 'COMPLETED',
+        metersProduced: { not: null },
+        date: { gte: monthStart, lt: monthEnd },
+      },
+    });
+    const monthlyTotalMeters = monthlyMetersAgg._sum.metersProduced ?? 0;
+
+    // Overhead per meter = total monthly overhead / total monthly meters
+    let overheadPerMeterPaisa = 0;
+    if (monthlyTotalMeters > 0 && effectiveOverheadTotalPaisa > 0n) {
+      overheadPerMeterPaisa = Number(effectiveOverheadTotalPaisa) / monthlyTotalMeters;
+    }
+    const overheadAllocatedPaisa = BigInt(Math.round(overheadPerMeterPaisa * (entry.metersProduced ?? 0)));
+
+    // ─── Scrap credit ─────────────────────────────────────────────────────
+    // Sum scrap from all shift variants, fallback to entry-level scrap
+    let totalScrapWeightGrams = 0;
+    for (const sv of entry.shiftVariants) {
+      totalScrapWeightGrams += sv.scrapWeightGrams ?? 0;
+    }
+    if (totalScrapWeightGrams === 0 && entry.scrapWeightGrams) {
+      totalScrapWeightGrams = entry.scrapWeightGrams;
+    }
+
+    // Get latest scrap sale rate for credit calculation
+    let scrapRatePerKgPaisa = 0n;
+    const latestScrapSale = await prisma.scrapSale.findFirst({
+      where: { isDeleted: false },
+      orderBy: { date: 'desc' },
+      select: { ratePerKgPaisa: true },
+    });
+    if (latestScrapSale) {
+      scrapRatePerKgPaisa = latestScrapSale.ratePerKgPaisa;
+    }
+
+    const scrapWeightKg = totalScrapWeightGrams / 1000;
+    const scrapCreditPaisa = scrapRatePerKgPaisa > 0n
+      ? BigInt(Math.round(scrapWeightKg * Number(scrapRatePerKgPaisa)))
+      : 0n;
+
     // ─── Total & per-meter ────────────────────────────────────────────────
-    const totalCostPaisa = electricityCostPaisa + rawMaterialCostPaisa + laborCostPaisa;
+    const totalCostBeforeScrapPaisa =
+      electricityCostPaisa +
+      rawMaterialCostPaisa +
+      packagingCostPaisa +
+      laborCostPaisa +
+      overheadAllocatedPaisa;
+
+    const totalCostPaisa = totalCostBeforeScrapPaisa - scrapCreditPaisa;
     const costPerMeterPaisa =
       entry.metersProduced > 0 ? Number(totalCostPaisa) / entry.metersProduced : 0;
+
+    // ─── Percentage breakdown (each component as % of total before scrap) ──
+    const totalBeforeScrapNum = Number(totalCostBeforeScrapPaisa);
+    const pctOf = (val: bigint) => totalBeforeScrapNum > 0 ? (Number(val) / totalBeforeScrapNum) * 100 : 0;
+
+    const rawMaterialPct = pctOf(rawMaterialCostPaisa);
+    const electricityPct = pctOf(electricityCostPaisa);
+    const laborPct = pctOf(laborCostPaisa);
+    const packagingPct = pctOf(packagingCostPaisa);
+    const overheadPct = pctOf(overheadAllocatedPaisa);
+    const scrapCreditPct = pctOf(scrapCreditPaisa);
 
     return {
       productionEntryId: entry.id,
@@ -157,6 +398,9 @@ export class CostPriceService {
       shift: entry.shift,
       variant: entry.shiftVariants.map(sv => `${sv.variant.code} - ${sv.variant.name}`).join(', ') || '—',
       metersProduced: entry.metersProduced,
+
+      recipe,
+      ingredientCosts,
 
       electricityCostPaisa,
       electricityUnitsConsumed: electricityUnits,
@@ -168,15 +412,50 @@ export class CostPriceService {
       weightedAvgBagPricePaisa,
       rawMaterialCostDisplay: formatPaisaToRupees(rawMaterialCostPaisa),
 
+      packagingCostPaisa,
+      packagingUnitsConsumed,
+      weightedAvgPackagingRatePaisa,
+      packagingCostDisplay: formatPaisaToRupees(packagingCostPaisa),
+
       laborCostPaisa,
       workerCount: entry.workers.length,
       laborCostDisplay: formatPaisaToRupees(laborCostPaisa),
 
+      overheadLaborPaisa: overheadBreakdown.laborPaisa,
+      overheadRentPaisa: overheadBreakdown.rentPaisa,
+      overheadTransportationPaisa: overheadBreakdown.transportationPaisa,
+      overheadPackingPaisa: effectivePackingOverheadPaisa,
+      overheadMiscellaneousPaisa: overheadBreakdown.miscellaneousPaisa,
+      overheadTotalPaisa: effectiveOverheadTotalPaisa,
+      overheadPerMeterPaisa,
+      overheadLaborDisplay: formatPaisaToRupees(overheadBreakdown.laborPaisa),
+      overheadRentDisplay: formatPaisaToRupees(overheadBreakdown.rentPaisa),
+      overheadTransportationDisplay: formatPaisaToRupees(overheadBreakdown.transportationPaisa),
+      overheadPackingDisplay: formatPaisaToRupees(effectivePackingOverheadPaisa),
+      overheadMiscellaneousDisplay: formatPaisaToRupees(overheadBreakdown.miscellaneousPaisa),
+      overheadTotalDisplay: formatPaisaToRupees(effectiveOverheadTotalPaisa),
+      overheadPerMeterDisplay: formatPaisaToRupees(BigInt(Math.round(overheadPerMeterPaisa))),
+      monthlyTotalMeters,
+
+      scrapWeightGrams: totalScrapWeightGrams,
+      scrapRatePerKgPaisa,
+      scrapCreditPaisa,
+      scrapCreditDisplay: formatPaisaToRupees(scrapCreditPaisa),
+
+      totalCostBeforeScrapPaisa,
+      totalCostBeforeScrapDisplay: formatPaisaToRupees(totalCostBeforeScrapPaisa),
       totalCostPaisa,
       totalCostDisplay: formatPaisaToRupees(totalCostPaisa),
 
       costPerMeterPaisa,
       costPerMeterDisplay: formatPaisaToRupees(BigInt(Math.round(costPerMeterPaisa))),
+
+      rawMaterialPct,
+      electricityPct,
+      laborPct,
+      packagingPct,
+      overheadPct,
+      scrapCreditPct,
     };
   }
 
