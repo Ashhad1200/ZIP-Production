@@ -10,6 +10,9 @@ import dashboardRoutes from './dashboard.routes';
 import hrRoutes from './hr.routes';
 import costPriceRoutes from './cost-price.routes';
 import salesReturnRoutes from './sales-return.routes';
+import monthlyOverheadRoutes from './monthly-overhead.routes';
+import vendorRoutes from './vendor.routes';
+import packagingRoutes from './packaging.routes';
 import { authenticate } from '../middleware/auth.middleware';
 import { notificationService } from '../services/notification.service';
 import { AuthenticatedRequest } from '../types';
@@ -48,6 +51,15 @@ router.use('/cost-price', costPriceRoutes);
 
 // Sales Return routes
 router.use('/sales-returns', salesReturnRoutes);
+
+// Monthly Overhead routes (Super Admin + Finance Head only)
+router.use('/monthly-overheads', monthlyOverheadRoutes);
+
+// Vendor routes (grain bag suppliers)
+router.use('/vendors', vendorRoutes);
+
+// Packaging inventory routes
+router.use('/packaging', packagingRoutes);
 
 // Notification routes (all protected)
 router.get('/notifications', authenticate, async (req: AuthenticatedRequest, res, next) => {

@@ -8,6 +8,11 @@ export interface EntityRef {
   name: string;
 }
 
+export interface VariantIngredientRef {
+  grainTypeName: string;
+  ratioPercent: number;
+}
+
 export interface VariantRef {
   id: string;
   code: string;
@@ -38,7 +43,7 @@ export interface RawMaterialConsumed {
 export interface ShiftVariant {
   id: string;
   variantId: string;
-  variant: VariantRef & { standardGramsPerMeter?: number };
+  variant: VariantRef & { standardGramsPerMeter?: number; ingredients?: VariantIngredientRef[] };
   metersProduced: number;
   gramsPerMeter: number | null;
   scrapWeightGrams: number;
@@ -284,6 +289,9 @@ export const productionApi = {
     api
       .post<{ data: ProductionEntryCompleteResult }>(`/production/entries/${id}/complete`, data)
       .then((r) => r.data),
+
+  unlockEntry: (id: string) =>
+    api.post<{ data: unknown }>(`/production/entries/${id}/unlock`).then((r) => r.data),
 
   // Daily Progress Report
   getDPR: (params: DPRFilters = {}) =>

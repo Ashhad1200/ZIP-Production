@@ -27,6 +27,9 @@ function ClientFormModal({ client, onClose, onSuccess }: ClientFormModalProps) {
   const [paymentCycleDays, setPaymentCycleDays] = useState(
     String(client?.paymentCycleDays ?? 30),
   );
+  const [openingBalancePaisa, setOpeningBalancePaisa] = useState(
+    String(client?.openingBalancePaisa ?? 0),
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{
     type: 'success' | 'error';
@@ -38,9 +41,11 @@ function ClientFormModal({ client, onClose, onSuccess }: ClientFormModalProps) {
     if (!name.trim()) errs.name = 'Client name is required';
     const days = Number(paymentCycleDays);
     if (isNaN(days) || days < 1) errs.paymentCycleDays = 'Must be a positive number';
+    const ob = Number(openingBalancePaisa);
+    if (isNaN(ob) || ob < 0) errs.openingBalancePaisa = 'Must be 0 or positive';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [name, paymentCycleDays]);
+  }, [name, paymentCycleDays, openingBalancePaisa]);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -50,6 +55,7 @@ function ClientFormModal({ client, onClose, onSuccess }: ClientFormModalProps) {
         phone: phone.trim() || undefined,
         address: address.trim() || undefined,
         paymentCycleDays: Number(paymentCycleDays),
+        openingBalancePaisa: Number(openingBalancePaisa),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-clients'] });
@@ -69,6 +75,7 @@ function ClientFormModal({ client, onClose, onSuccess }: ClientFormModalProps) {
         phone: phone.trim() || null,
         address: address.trim() || null,
         paymentCycleDays: Number(paymentCycleDays),
+        openingBalancePaisa: Number(openingBalancePaisa),
       } as Partial<Client>),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-clients'] });
@@ -174,6 +181,26 @@ function ClientFormModal({ client, onClose, onSuccess }: ClientFormModalProps) {
           {errors.paymentCycleDays && (
             <p className="mt-1 text-xs text-red-600">{errors.paymentCycleDays}</p>
           )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Opening Balance (PKR paisa)
+          </label>
+          <input
+            type="number"
+            value={openingBalancePaisa}
+            onChange={(e) => setOpeningBalancePaisa(e.target.value)}
+            min={0}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.openingBalancePaisa ? 'border-red-400' : 'border-gray-300'}`}
+            placeholder="0 (enter in paisa, e.g. 100000 = Rs 1,000)"
+          />
+          {errors.openingBalancePaisa && (
+            <p className="mt-1 text-xs text-red-600">{errors.openingBalancePaisa}</p>
+          )}
+          <p className="mt-1 text-xs text-gray-500">
+            Amount client already owes before system start (in paisa — 1 PKR = 100 paisa)
+          </p>
         </div>
 
         <div className="flex justify-end gap-3 pt-2">

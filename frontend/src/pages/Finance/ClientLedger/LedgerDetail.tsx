@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { pdf } from '@react-pdf/renderer';
 import {
   ArrowLeft,
   Download,
@@ -19,6 +20,7 @@ import {
 import { formatDatePKT } from '../../../utils/date';
 import { POLLING_INTERVALS, PAGINATION_DEFAULTS } from '../../../utils/constants';
 import { PaymentForm } from './PaymentForm';
+import { LedgerPDF } from './LedgerPDF';
 
 export function LedgerDetail() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -62,8 +64,31 @@ export function LedgerDetail() {
         a.click();
         window.URL.revokeObjectURL(url);
       } else {
-        // PDF: open printable ledger in new tab
-        window.print();
+        // PDF: fetch full ledger (all pages) then render client-side
+        const fullResp = await financeApi.getClientLedger(clientId, { page: 1, limit: 999999 });
+        const fullLedger = fullResp.data;
+        const clientName = fullLedger?.client?.name ?? clientId;
+        const allEntries = fullLedger?.entries ?? [];
+        const summary = fullLedger?.summary;
+        const blob = await pdf(
+          <LedgerPDF
+            clientName={clientName}
+            entries={allEntries}
+            summary={{
+              totalDebits: summary?.totalDebitsDisplay ?? '0',
+              totalCredits: summary?.totalCreditsDisplay ?? '0',
+              closingBalance: summary?.outstandingDisplay ?? '0',
+              closingBalanceType: Number(summary?.outstanding ?? 0) >= 0 ? 'DR' : 'CR',
+            }}
+            generatedAt={new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}
+          />,
+        ).toBlob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ledger-${clientName.replace(/\s+/g, '-')}.pdf`;
+        a.click();
+        window.URL.revokeObjectURL(url);
       }
     } catch {
       // Download error silently handled
@@ -198,17 +223,17 @@ export function LedgerDetail() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative">
             <button
               onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
             >
               <Download size={16} />
               Download
             </button>
             {showDownloadMenu && (
-              <div className="absolute right-0 z-10 mt-1 w-32 rounded-lg border bg-white py-1 shadow-lg">
+              <div className="absolute right-0 z-10 mt-1 w-full min-w-[8rem] rounded-lg border bg-white py-1 shadow-lg sm:w-32">
                 <button
                   onClick={() => handleDownload('pdf')}
                   className="block w-full px-4 py-2 text-left text-sm hover:bg-gray-50"
@@ -226,13 +251,13 @@ export function LedgerDetail() {
           </div>
           <button
             onClick={() => navigate(`/finance/client-ledger/${clientId}/rates`)}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
           >
             Rates
           </button>
           <button
             onClick={() => setShowPaymentForm(true)}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
           >
             <CreditCard size={16} />
             Record Payment

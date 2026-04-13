@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle, Loader2 } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle, Loader2, LockOpen, FlaskConical } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import {
   productionApi,
   type CompleteProductionEntryPayload,
 } from '../../services/production.api';
+import { useRole } from '../../hooks/useRole';
 
 interface FormErrors {
   metersProduced?: string;
@@ -17,6 +18,8 @@ interface FormErrors {
 export function ProductionEntryComplete() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isAdmin } = useRole();
 
   const [metersProduced, setMetersProduced] = useState('');
   const [gramsPerMeter, setGramsPerMeter] = useState('');
@@ -78,6 +81,17 @@ export function ProductionEntryComplete() {
     },
   });
 
+  const unlockMutation = useMutation({
+    mutationFn: () => productionApi.unlockEntry(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-entry', id] });
+      setToast({ type: 'success', message: 'Entry unlocked. You can now re-complete it.' });
+    },
+    onError: (err: Error) => {
+      setToast({ type: 'error', message: err.message || 'Failed to unlock entry' });
+    },
+  });
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!validate() || !variant) return;
@@ -109,12 +123,37 @@ export function ProductionEntryComplete() {
         <div className="rounded-xl border border-green-200 bg-green-50 p-6 text-center">
           <CheckCircle className="mx-auto mb-3 h-10 w-10 text-green-600" />
           <p className="font-semibold text-green-800">This entry is already completed.</p>
-          <button
-            onClick={() => navigate('/production')}
-            className="mt-4 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-          >
-            Back to List
-          </button>
+          <div className="mt-4 flex justify-center gap-3">
+            <button
+              onClick={() => navigate('/production')}
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+            >
+              Back to List
+            </button>
+            {isAdmin() && (
+              <button
+                onClick={() => {
+                  if (window.confirm('Unlock this completed entry? This allows re-entering completion data.')) {
+                    unlockMutation.mutate();
+                  }
+                }}
+                disabled={unlockMutation.isPending}
+                className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+              >
+                {unlockMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LockOpen className="h-4 w-4" />
+                )}
+                Unlock Entry
+              </button>
+            )}
+          </div>
+          {toast && (
+            <p className={`mt-3 text-sm ${toast.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>
+              {toast.message}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -141,6 +180,16 @@ export function ProductionEntryComplete() {
           <span>{entry.date}</span>
           <span className="font-medium">Variant:</span>
           <span>{variant ? `${variant.variant.code} – ${variant.variant.name}` : '—'}</span>
+          {variant?.variant.ingredients && variant.variant.ingredients.length > 1 && (
+            <>
+              <span className="font-medium flex items-center gap-1">
+                <FlaskConical size={12} className="text-indigo-600" /> Formula:
+              </span>
+              <span className="text-indigo-700">
+                {variant.variant.ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+              </span>
+            </>
+          )}
           {entry.machine && (
             <>
               <span className="font-medium">Machine:</span>

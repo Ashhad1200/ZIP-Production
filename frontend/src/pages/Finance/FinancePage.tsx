@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, FileText, BarChart3 } from 'lucide-react';
+import { Users, FileText, BarChart3, TrendingUp } from 'lucide-react';
 
 export default function FinancePage() {
   const navigate = useNavigate();
@@ -25,6 +25,13 @@ export default function FinancePage() {
       icon: BarChart3,
       path: '/finance/reports',
       color: 'bg-purple-50 text-purple-600',
+    },
+    {
+      title: 'Profit & Loss',
+      description: 'Monthly P&L: revenue, COGS, overheads, and net profit',
+      icon: TrendingUp,
+      path: '/finance/profit-loss',
+      color: 'bg-emerald-50 text-emerald-600',
     },
   ];
 

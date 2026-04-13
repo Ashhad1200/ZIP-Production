@@ -285,6 +285,23 @@ export class FinanceController {
       next(error);
     }
   }
+
+  async getProfitLoss(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { year, month } = req.query;
+      if (!year || !month) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'year and month are required' } });
+        return;
+      }
+      const result = await financeService.getProfitLoss(
+        parseInt(year as string),
+        parseInt(month as string),
+      );
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const financeController = new FinanceController();

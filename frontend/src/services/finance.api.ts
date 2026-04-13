@@ -292,4 +292,26 @@ export const financeApi = {
     api
       .get<{ data: { id: string; name: string }[] }>('/settings/companies')
       .then((r) => r.data),
+
+  getProfitLoss: (year: number, month: number) =>
+    api
+      .get<{
+        data: {
+          year: number;
+          month: number;
+          revenue: { paisa: number; display: string };
+          cogs: { paisa: number; display: string };
+          grossProfit: { paisa: number; display: string };
+          overheads: {
+            labor: { paisa: number; display: string };
+            rent: { paisa: number; display: string };
+            transportation: { paisa: number; display: string };
+            packing: { paisa: number; display: string };
+            miscellaneous: { paisa: number; display: string };
+            total: { paisa: number; display: string };
+          };
+          netProfit: { paisa: number; display: string };
+        };
+      }>('/finance/reports/profit-loss', { params: { year, month } })
+      .then((r) => r.data),
 };

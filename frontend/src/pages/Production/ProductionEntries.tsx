@@ -98,7 +98,21 @@ export function ProductionEntries() {
       header: 'Variant',
       sortable: true,
       hideOnMobile: true,
-      render: (row) => row.shiftVariants.map((sv) => sv.variant.code).join(', '),
+      render: (row) => {
+        const codes = row.shiftVariants.map((sv) => sv.variant.code).join(', ');
+        const firstSV = row.shiftVariants[0];
+        const ingredients = firstSV?.variant.ingredients;
+        return (
+          <div>
+            <span>{codes}</span>
+            {ingredients && ingredients.length > 1 && (
+              <div className="text-xs text-indigo-500">
+                {ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'metersProduced',

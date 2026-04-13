@@ -40,12 +40,15 @@ export class FinanceService {
         contactPerson: true,
         phone: true,
         paymentCycleDays: true,
+        openingBalancePaisa: true,
       },
     });
 
     // Aggregate balances and overdue info per client
     const enriched = await Promise.all(
       allClients.map(async (client) => {
+        const openingBalance = BigInt(client.openingBalancePaisa ?? 0n);
+
         // Sum debits / credits from journal entry lines
         const agg = await prisma.journalEntryLine.aggregate({
           where: {
@@ -55,9 +58,10 @@ export class FinanceService {
           _sum: { debitAmountPaisa: true, creditAmountPaisa: true },
         });
 
-        const totalDebits = agg._sum.debitAmountPaisa ?? 0n;
-        const totalCredits = agg._sum.creditAmountPaisa ?? 0n;
-        const outstanding = BigInt(totalDebits) - BigInt(totalCredits);
+        const journalDebits = BigInt(agg._sum.debitAmountPaisa ?? 0n);
+        const totalDebits = journalDebits + openingBalance;
+        const totalCredits = BigInt(agg._sum.creditAmountPaisa ?? 0n);
+        const outstanding = totalDebits - totalCredits;
 
         // Overdue gate passes
         const overdueGPs = await prisma.gatePass.findMany({
@@ -132,13 +136,15 @@ export class FinanceService {
 
     const client = await prisma.client.findUnique({
       where: { id: clientId },
-      select: { id: true, name: true, paymentCycleDays: true, isDeleted: true },
+      select: { id: true, name: true, paymentCycleDays: true, isDeleted: true, openingBalancePaisa: true },
     });
     if (!client || client.isDeleted) {
       throw Object.assign(new Error('Client not found'), { statusCode: 404, code: 'CLIENT_NOT_FOUND' });
     }
 
-    // Summary
+    const openingBalancePaisa = BigInt(client.openingBalancePaisa ?? 0n);
+
+    // Summary — include opening balance as an implicit debit
     const agg = await prisma.journalEntryLine.aggregate({
       where: {
         clientId,
@@ -146,9 +152,10 @@ export class FinanceService {
       },
       _sum: { debitAmountPaisa: true, creditAmountPaisa: true },
     });
-    const totalDebits = agg._sum.debitAmountPaisa ?? 0n;
-    const totalCredits = agg._sum.creditAmountPaisa ?? 0n;
-    const outstanding = BigInt(totalDebits) - BigInt(totalCredits);
+    const journalDebits = BigInt(agg._sum.debitAmountPaisa ?? 0n);
+    const totalDebits = journalDebits + openingBalancePaisa;
+    const totalCredits = BigInt(agg._sum.creditAmountPaisa ?? 0n);
+    const outstanding = totalDebits - totalCredits;
 
     // Build where clause for lines
     const lineWhere: Prisma.JournalEntryLineWhereInput = {
@@ -193,9 +200,9 @@ export class FinanceService {
       filtered = allLines.filter((l) => BigInt(l.creditAmountPaisa) > 0n);
     }
 
-    // Build ledger entries with running balance
-    let runningBalance = 0n;
-    const ledgerEntries = await Promise.all(
+    // Build ledger entries with running balance — start from opening balance
+    let runningBalance = openingBalancePaisa;
+    const journalLedgerEntries = await Promise.all(
       filtered.map(async (line) => {
         const isDebit = BigInt(line.debitAmountPaisa) > 0n;
         const amountPaisa = isDebit ? BigInt(line.debitAmountPaisa) : BigInt(line.creditAmountPaisa);
@@ -236,6 +243,28 @@ export class FinanceService {
       }),
     );
 
+    // Prepend opening balance row if non-zero
+    const openingEntry = openingBalancePaisa > 0n
+      ? [{
+          id: 'opening-balance',
+          date: 'Opening Balance',
+          type: 'DEBIT' as const,
+          description: 'Opening Balance (Day 0)',
+          referenceType: 'opening_balance',
+          referenceId: null,
+          gatePassNumber: null,
+          amountPaisa: openingBalancePaisa,
+          amountDisplay: formatPaisaToRupees(openingBalancePaisa),
+          paymentDueDate: null,
+          isOverdue: false,
+          daysOverdue: 0,
+          runningBalancePaisa: openingBalancePaisa,
+          runningBalanceDisplay: formatPaisaToRupees(openingBalancePaisa),
+        }]
+      : [];
+
+    const ledgerEntries = [...openingEntry, ...journalLedgerEntries];
+
     // Paginate
     const total = ledgerEntries.length;
     const totalPages = Math.ceil(total / limit);
@@ -243,8 +272,10 @@ export class FinanceService {
     const entries = ledgerEntries.slice(startIdx, startIdx + limit);
 
     return {
-      client: { id: client.id, name: client.name, paymentCycleDays: client.paymentCycleDays },
+      client: { id: client.id, name: client.name, paymentCycleDays: client.paymentCycleDays, openingBalancePaisa },
       summary: {
+        openingBalancePaisa,
+        openingBalanceDisplay: formatPaisaToRupees(openingBalancePaisa),
         totalDebits,
         totalDebitsDisplay: formatPaisaToRupees(totalDebits),
         totalCredits,
@@ -1021,6 +1052,49 @@ export class FinanceService {
       closingBalanceDisplay: formatPaisaToRupees(closingBalance),
     };
   }
-}
 
+  async getProfitLoss(year: number, month: number) {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    const gatePasses = await prisma.gatePass.findMany({
+      where: { isDeleted: false, createdAt: { gte: start, lt: end } },
+      include: { lineItems: { select: { lineAmountPaisa: true } } },
+    });
+    const revenuePaisa = gatePasses.reduce((acc: number, gp: { lineItems: { lineAmountPaisa: bigint }[] }) => {
+      return acc + gp.lineItems.reduce((s: number, li: { lineAmountPaisa: bigint }) => s + Number(li.lineAmountPaisa), 0);
+    }, 0);
+    const productions = await prisma.productionEntry.findMany({
+      where: { isDeleted: false, status: 'COMPLETED', date: { gte: start, lt: end } },
+      select: { costPricePaisa: true, shiftVariants: { select: { metersProduced: true } } },
+    });
+    const cogsPaisa = productions.reduce((acc: number, pe: { costPricePaisa: bigint | null; shiftVariants: { metersProduced: number | null }[] }) => {
+      const meters = pe.shiftVariants.reduce((s: number, sv: { metersProduced: number | null }) => s + (sv.metersProduced ?? 0), 0);
+      return acc + meters * Number(pe.costPricePaisa ?? 0);
+    }, 0);
+    const overhead = await prisma.monthlyOverhead.findUnique({ where: { year_month: { year, month } } });
+    const laborPaisa = Number(overhead?.laborPaisa ?? 0);
+    const rentPaisa = Number(overhead?.rentPaisa ?? 0);
+    const transportationPaisa = Number(overhead?.transportationPaisa ?? 0);
+    const packingPaisa = Number(overhead?.packingPaisa ?? 0);
+    const miscellaneousPaisa = Number(overhead?.miscellaneousPaisa ?? 0);
+    const totalOverheadPaisa = laborPaisa + rentPaisa + transportationPaisa + packingPaisa + miscellaneousPaisa;
+    const grossProfitPaisa = revenuePaisa - cogsPaisa;
+    const netProfitPaisa = grossProfitPaisa - totalOverheadPaisa;
+    return {
+      year, month,
+      revenue: { paisa: revenuePaisa, display: formatPaisaToRupees(revenuePaisa) },
+      cogs: { paisa: cogsPaisa, display: formatPaisaToRupees(cogsPaisa) },
+      grossProfit: { paisa: grossProfitPaisa, display: formatPaisaToRupees(grossProfitPaisa) },
+      overheads: {
+        labor: { paisa: laborPaisa, display: formatPaisaToRupees(laborPaisa) },
+        rent: { paisa: rentPaisa, display: formatPaisaToRupees(rentPaisa) },
+        transportation: { paisa: transportationPaisa, display: formatPaisaToRupees(transportationPaisa) },
+        packing: { paisa: packingPaisa, display: formatPaisaToRupees(packingPaisa) },
+        miscellaneous: { paisa: miscellaneousPaisa, display: formatPaisaToRupees(miscellaneousPaisa) },
+        total: { paisa: totalOverheadPaisa, display: formatPaisaToRupees(totalOverheadPaisa) },
+      },
+      netProfit: { paisa: netProfitPaisa, display: formatPaisaToRupees(netProfitPaisa) },
+    };
+  }
+}
 export const financeService = new FinanceService();

@@ -11,6 +11,7 @@ interface LineItemRow {
   variantId: string;
   meters: number;
   rate: ClientRateResult | null;
+  manualRatePKR: string; // user-entered rate in PKR when no ClientRate found
   stock: StockResult | null;
   loadingRate: boolean;
   loadingStock: boolean;
@@ -28,7 +29,7 @@ export function GatePassForm() {
   const [shift, setShift] = useState<Shift>('DAY');
   const [orderId, setOrderId] = useState('');
   const [lineItems, setLineItems] = useState<LineItemRow[]>([
-    { key: ++lineKeyCounter, variantId: '', meters: 0, rate: null, stock: null, loadingRate: false, loadingStock: false },
+    { key: ++lineKeyCounter, variantId: '', meters: 0, rate: null, manualRatePKR: '', stock: null, loadingRate: false, loadingStock: false },
   ]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirm, setShowConfirm] = useState(false);
@@ -86,13 +87,13 @@ export function GatePassForm() {
 
   // Fetch rate and stock when line item variant changes
   const fetchRateAndStock = useCallback(
-    async (index: number, variantId: string) => {
+    async (index: number, variantId: string, currentOrderId?: string) => {
       if (!variantId) return;
 
       setLineItems((prev) => {
         const next = [...prev];
         const cur = next[index];
-        if (cur) next[index] = { ...cur, loadingRate: !!clientId, loadingStock: true };
+        if (cur) next[index] = { ...cur, loadingRate: !!clientId, loadingStock: true, rate: null, manualRatePKR: '' };
         return next;
       });
 
@@ -118,12 +119,34 @@ export function GatePassForm() {
       if (clientId) {
         try {
           const rateResult = await gatePassApi.getClientRate(clientId, variantId);
-          setLineItems((prev) => {
-            const next = [...prev];
-            const cur = next[index];
-            if (cur) next[index] = { ...cur, rate: rateResult.data, loadingRate: false };
-            return next;
-          });
+          // rateResult.data is null when no ClientRate exists → fall back to order rate
+          const autoRate = rateResult.data;
+          if (autoRate) {
+            setLineItems((prev) => {
+              const next = [...prev];
+              const cur = next[index];
+              if (cur) next[index] = { ...cur, rate: autoRate, loadingRate: false };
+              return next;
+            });
+          } else {
+            // Try order rate fallback
+            const activeOrderId = currentOrderId ?? orderId;
+            const orderLineItem = activeOrderId
+              ? orders.find((o) => o.id === activeOrderId)?.lineItems.find((li) => li.variantId === variantId)
+              : null;
+            const orderRate = orderLineItem?.ratePerMeterPaisa != null
+              ? {
+                  ratePerMeterPaisa: String(orderLineItem.ratePerMeterPaisa),
+                  ratePerMeterDisplay: `PKR ${(Number(orderLineItem.ratePerMeterPaisa) / 100).toFixed(2)} (from order)`,
+                }
+              : null;
+            setLineItems((prev) => {
+              const next = [...prev];
+              const cur = next[index];
+              if (cur) next[index] = { ...cur, rate: orderRate, loadingRate: false };
+              return next;
+            });
+          }
         } catch {
           setLineItems((prev) => {
             const next = [...prev];
@@ -134,10 +157,10 @@ export function GatePassForm() {
         }
       }
     },
-    [clientId],
+    [clientId, orderId, orders],
   );
 
-  // Refetch all rates when client changes
+  // Refetch all rates when client or linked order changes
   useEffect(() => {
     lineItems.forEach((item, idx) => {
       if (item.variantId && clientId) {
@@ -145,7 +168,7 @@ export function GatePassForm() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId]);
+  }, [clientId, orderId]);
 
   const updateLineItem = (index: number, field: keyof LineItemRow, value: string | number) => {
     setLineItems((prev) => {
@@ -163,7 +186,7 @@ export function GatePassForm() {
   const addLineItem = () => {
     setLineItems((prev) => [
       ...prev,
-      { key: ++lineKeyCounter, variantId: '', meters: 0, rate: null, stock: null, loadingRate: false, loadingStock: false },
+    { key: ++lineKeyCounter, variantId: '', meters: 0, rate: null, manualRatePKR: '', stock: null, loadingRate: false, loadingStock: false },
     ]);
   };
 
@@ -188,8 +211,8 @@ export function GatePassForm() {
         if (item.stock && item.meters > item.stock.availableMeters) {
           errs[`line_${i}_stock`] = `Insufficient stock (available: ${item.stock.availableMeters}m)`;
         }
-        if (!item.rate) {
-          errs[`line_${i}_rate`] = 'No active rate found for this client-variant pair';
+        if (!item.rate && (!item.manualRatePKR || parseFloat(item.manualRatePKR) <= 0)) {
+          errs[`line_${i}_rate`] = 'Enter rate per meter (PKR) — no active rate found for this client-variant pair';
         }
         // Check against linked order remaining meters per variant
         if (orderId) {
@@ -220,7 +243,15 @@ export function GatePassForm() {
     setShowConfirm(false);
     const validLines = lineItems
       .filter((li) => li.variantId && li.meters > 0)
-      .map((li) => ({ variantId: li.variantId, meters: li.meters }));
+      .map((li) => {
+        const manualPaisa = li.manualRatePKR ? Math.round(parseFloat(li.manualRatePKR) * 100) : undefined;
+        return {
+          variantId: li.variantId,
+          meters: li.meters,
+          // Only send manual rate if no auto-rate; backend will use it directly
+          ratePerMeterPaisa: li.rate ? undefined : manualPaisa,
+        };
+      });
 
     createMutation.mutate({
       clientId,
@@ -235,11 +266,11 @@ export function GatePassForm() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">New Gate Pass</h1>
         <button
           onClick={() => navigate('/gate-pass')}
-          className="rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          className="min-h-[44px] rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 sm:self-auto"
         >
           Cancel
         </button>
@@ -256,7 +287,7 @@ export function GatePassForm() {
         </div>
       )}
 
-      <div className="rounded-lg border bg-white p-6 shadow-sm">
+      <div className="rounded-lg border bg-white p-4 shadow-sm sm:p-6">
         {/* Client & Date row */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SearchableSelect
@@ -333,7 +364,7 @@ export function GatePassForm() {
             <p className="mt-1 text-xs text-red-600">{errors.lineItems}</p>
           )}
 
-          <div className="mt-3">
+          <div className="mt-3 hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
@@ -352,8 +383,32 @@ export function GatePassForm() {
                         value={item.variantId}
                         onChange={(val) => updateLineItem(idx, 'variantId', val)}
                         placeholder="Select variant..."
-                        error={errors[`line_${idx}_rate`]}
                       />
+                      {/* No rate found and no order linked — show hidden manual rate input */}
+                      {!item.loadingRate && !item.rate && item.variantId && clientId && (
+                        <div className="mt-1">
+                          <input
+                            type="number"
+                            min={0.01}
+                            step={0.01}
+                            value={item.manualRatePKR}
+                            onChange={(e) => {
+                              setLineItems((prev) => {
+                                const next = [...prev];
+                                const cur = next[idx];
+                                if (cur) next[idx] = { ...cur, manualRatePKR: e.target.value };
+                                return next;
+                              });
+                              setErrors((prev) => { const n = { ...prev }; delete n[`line_${idx}_rate`]; return n; });
+                            }}
+                            className={`w-full rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`line_${idx}_rate`] ? 'border-red-400 bg-red-50' : 'border-orange-300 bg-orange-50'}`}
+                            placeholder="Rate (PKR/m) — not set for this client"
+                          />
+                          {errors[`line_${idx}_rate`] && (
+                            <p className="mt-0.5 text-xs text-red-500">Rate is required</p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <input
@@ -410,6 +465,97 @@ export function GatePassForm() {
               </tbody>
             </table>
           </div>
+
+          <div className="mt-3 space-y-4 md:hidden">
+            {lineItems.map((item, idx) => (
+              <div key={item.key} className="rounded-lg border border-gray-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-900">Line Item {idx + 1}</h3>
+                  <button
+                    type="button"
+                    onClick={() => removeLineItem(idx)}
+                    disabled={lineItems.length <= 1}
+                    className="rounded p-1 text-red-500 hover:bg-red-50 disabled:opacity-30"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">Variant</label>
+                  <SearchableSelect
+                    options={variants.map((v) => ({ value: v.id, label: `${v.code} — ${v.name}` }))}
+                    value={item.variantId}
+                    onChange={(val) => updateLineItem(idx, 'variantId', val)}
+                    placeholder="Select variant..."
+                  />
+                  {!item.loadingRate && !item.rate && item.variantId && clientId && (
+                    <div className="mt-2">
+                      <input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        value={item.manualRatePKR}
+                        onChange={(e) => {
+                          setLineItems((prev) => {
+                            const next = [...prev];
+                            const cur = next[idx];
+                            if (cur) next[idx] = { ...cur, manualRatePKR: e.target.value };
+                            return next;
+                          });
+                          setErrors((prev) => { const n = { ...prev }; delete n[`line_${idx}_rate`]; return n; });
+                        }}
+                        className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`line_${idx}_rate`] ? 'border-red-400 bg-red-50' : 'border-orange-300 bg-orange-50'}`}
+                        placeholder="Rate (PKR/m) — not set for this client"
+                      />
+                      {errors[`line_${idx}_rate`] && (
+                        <p className="mt-1 text-xs text-red-500">Rate is required</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">Meters</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={item.meters || ''}
+                    onChange={(e) => updateLineItem(idx, 'meters', parseInt(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-gray-500">Available stock</span>
+                    {item.loadingStock ? (
+                      <span className="text-gray-400 text-xs">Loading…</span>
+                    ) : item.stock ? (
+                      <span
+                        className={
+                          item.meters > 0 && item.meters > item.stock.availableMeters
+                            ? 'font-medium text-red-600'
+                            : 'text-gray-700'
+                        }
+                      >
+                        {item.stock.availableMeters}m
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </div>
+                  {errors[`line_${idx}_stock`] && (
+                    <p className="mt-1 text-xs text-red-600">{errors[`line_${idx}_stock`]}</p>
+                  )}
+                  {errors[`line_${idx}_order`] && (
+                    <p className="mt-1 text-xs text-red-600">{errors[`line_${idx}_order`]}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Submit */}
@@ -417,7 +563,7 @@ export function GatePassForm() {
           <button
             onClick={handleSubmit}
             disabled={createMutation.isPending}
-            className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="min-h-[44px] w-full rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 sm:w-auto"
           >
             {createMutation.isPending ? 'Creating...' : 'Create Gate Pass'}
           </button>

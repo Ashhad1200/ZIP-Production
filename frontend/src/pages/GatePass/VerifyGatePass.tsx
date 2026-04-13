@@ -106,10 +106,6 @@ export function VerifyGatePass() {
                 <span className="text-gray-600">Client</span>
                 <span className="font-semibold">{state.data.clientName}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total Amount</span>
-                <span className="font-bold text-lg">{state.data.totalAmountDisplay}</span>
-              </div>
               {state.data.receivedAt && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Received At</span>

@@ -45,7 +45,7 @@ export class InventoryController {
 
   async recordPurchase(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { grainTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source } = req.body;
+      const { grainTypeId, vendorId, numberOfBags, ratePerBagPaisa, purchaseDate, source } = req.body;
 
       if (!grainTypeId || numberOfBags == null || ratePerBagPaisa == null || !purchaseDate || !source) {
         res.status(422).json({
@@ -58,7 +58,7 @@ export class InventoryController {
       }
 
       const result = await inventoryService.recordPurchase(
-        { grainTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source },
+        { grainTypeId, vendorId: vendorId || undefined, numberOfBags, ratePerBagPaisa, purchaseDate, source },
         req.user!.userId
       );
 

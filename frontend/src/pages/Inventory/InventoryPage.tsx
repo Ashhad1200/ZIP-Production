@@ -5,6 +5,7 @@ import { FinishedGoodsStock } from './FinishedGoodsStock';
 import { ConsumptionReport } from './ConsumptionReport';
 import { FifoBatchesPage } from './FifoBatchesPage';
 import { ElectricityRatesPage } from './ElectricityRatesPage';
+import PackagingInventory from './PackagingInventory';
 
 export default function InventoryPage() {
   return (
@@ -16,6 +17,7 @@ export default function InventoryPage() {
       <Route path="consumption-report" element={<ConsumptionReport />} />
       <Route path="batches" element={<FifoBatchesPage />} />
       <Route path="electricity-rates" element={<ElectricityRatesPage />} />
+      <Route path="packaging" element={<PackagingInventory />} />
       <Route path="*" element={<Navigate to="/inventory" replace />} />
     </Routes>
   );

@@ -38,6 +38,9 @@ const VouchersPage = React.lazy(
   () => import('./pages/Finance/VouchersPage'),
 );
 const ReportsPage = React.lazy(() => import('./pages/Finance/ReportsPage'));
+const ProfitLossPage = React.lazy(() =>
+  import('./pages/Finance/Reports/ProfitLossReport').then((m) => ({ default: m.ProfitLossReport })),
+);
 const SettingsPage = React.lazy(
   () => import('./pages/Settings/SettingsPage'),
 );
@@ -45,6 +48,9 @@ const HRPage = React.lazy(() => import('./pages/HR/HRPage'));
 const VerifyPage = React.lazy(() => import('./pages/Verify/VerifyPage'));
 const CostPriceReportPage = React.lazy(() =>
   import('./pages/Production/CostPriceReport').then((m) => ({ default: m.CostPriceReport })),
+);
+const MonthlyOverheadPage = React.lazy(() =>
+  import('./pages/Production/MonthlyOverheadPage').then((m) => ({ default: m.MonthlyOverheadPage })),
 );
 const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
 
@@ -147,6 +153,14 @@ export const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'monthly-overhead',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD]}>
+            <Lazy element={MonthlyOverheadPage} />
+          </RoleGuard>
+        ),
+      },
+      {
         path: 'inventory/*',
         element: (
           <RoleGuard
@@ -207,6 +221,7 @@ export const routes: RouteObject[] = [
           },
           { path: 'vouchers/*', element: <Lazy element={VouchersPage} /> },
           { path: 'reports', element: <Lazy element={ReportsPage} /> },
+          { path: 'profit-loss', element: <Lazy element={ProfitLossPage} /> },
         ],
       },
       {
