@@ -218,25 +218,37 @@ export function GatePassDetail() {
                 <th className="px-4 py-3">#</th>
                 <th className="px-4 py-3">Variant</th>
                 <th className="px-4 py-3 text-right">Meters</th>
+                <th className="px-4 py-3 text-right">Cartons</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {gatePass.lineItems.map((li, idx) => (
-                <tr key={li.id}>
-                  <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{li.variant.code}</span>
-                    <span className="ml-2 text-gray-500">{li.variant.name}</span>
-                  </td>
-                  <td className="px-4 py-3 text-right">{li.meters.toLocaleString()}</td>
-                </tr>
-              ))}
+              {gatePass.lineItems.map((li, idx) => {
+                const mpc = li.variant.metersPerCarton;
+                const cartons = mpc && mpc > 0 ? Math.ceil(li.meters / mpc) : null;
+                return (
+                  <tr key={li.id}>
+                    <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium">{li.variant.code}</span>
+                      <span className="ml-2 text-gray-500">{li.variant.name}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">{li.meters.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">{cartons != null ? cartons.toLocaleString() : <span className="text-gray-400">—</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot className="border-t bg-gray-50">
               <tr>
-                <td colSpan={2} className="px-4 py-3 text-right font-semibold">Total Meters</td>
+                <td colSpan={2} className="px-4 py-3 text-right font-semibold">Total</td>
                 <td className="px-4 py-3 text-right font-bold text-lg">
                   {gatePass.lineItems.reduce((sum, li) => sum + li.meters, 0).toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-right font-bold text-lg">
+                  {gatePass.lineItems.reduce((sum, li) => {
+                    const mpc = li.variant.metersPerCarton;
+                    return sum + (mpc && mpc > 0 ? Math.ceil(li.meters / mpc) : 0);
+                  }, 0).toLocaleString()}
                 </td>
               </tr>
             </tfoot>

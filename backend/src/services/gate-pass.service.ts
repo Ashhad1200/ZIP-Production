@@ -13,6 +13,7 @@ import { addDays, startOfDay, endOfDay } from '../utils/date';
 interface LineItemInput {
   variantId: string;
   meters: number;
+  ratePerMeterPaisa?: number; // Optional manual override when no ClientRate exists
 }
 
 interface CreateGatePassInput {
@@ -110,30 +111,51 @@ export class GatePassService {
           );
         }
 
-        // Look up active rate
-        const now = new Date();
-        const rate = await tx.clientRate.findFirst({
-          where: {
-            clientId: input.clientId,
-            variantId: item.variantId,
-            isDeleted: false,
-            effectiveFrom: { lte: now },
-            OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],
-          },
-          orderBy: { effectiveFrom: 'desc' },
-        });
-        if (!rate) {
+        // Look up active rate: priority order:
+        // 1. Manual override from request (ratePerMeterPaisa field)
+        // 2. Active ClientRate record
+        // 3. Rate from the linked order's line item (order already has rates per variant)
+        let ratePerMeterPaisa: bigint | null = null;
+
+        if (item.ratePerMeterPaisa != null && item.ratePerMeterPaisa > 0) {
+          ratePerMeterPaisa = BigInt(item.ratePerMeterPaisa);
+        } else {
+          const now = new Date();
+          const clientRate = await tx.clientRate.findFirst({
+            where: {
+              clientId: input.clientId,
+              variantId: item.variantId,
+              isDeleted: false,
+              effectiveFrom: { lte: now },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],
+            },
+            orderBy: { effectiveFrom: 'desc' },
+          });
+          if (clientRate) {
+            ratePerMeterPaisa = clientRate.ratePerMeterPaisa;
+          } else if (input.orderId) {
+            // Fall back to the rate stored on the linked order's line item
+            const orderLineItem = await tx.orderLineItem.findFirst({
+              where: { orderId: input.orderId, variantId: item.variantId },
+            });
+            if (orderLineItem) {
+              ratePerMeterPaisa = orderLineItem.ratePerMeterPaisa;
+            }
+          }
+        }
+
+        if (!ratePerMeterPaisa) {
           throw Object.assign(
-            new Error(`No active rate found for client ${client.name} and variant ${item.variantId}`),
+            new Error(`No rate found for client ${client.name} and variant ${item.variantId}. Link the gate pass to an order with rates, or set up a Client Rate.`),
             { statusCode: 422, code: 'RATE_NOT_FOUND' },
           );
         }
 
-        const lineAmountPaisa = rate.ratePerMeterPaisa * BigInt(item.meters);
+        const lineAmountPaisa = ratePerMeterPaisa * BigInt(item.meters);
         resolvedLines.push({
           variantId: item.variantId,
           meters: item.meters,
-          ratePerMeterPaisa: rate.ratePerMeterPaisa,
+          ratePerMeterPaisa: ratePerMeterPaisa,
           lineAmountPaisa,
         });
       }
@@ -242,7 +264,7 @@ export class GatePassService {
           order: { select: { id: true, orderNumber: true } },
           lineItems: {
             include: {
-              variant: { select: { id: true, code: true, name: true } },
+              variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
             },
           },
         },
@@ -325,7 +347,7 @@ export class GatePassService {
           order: { select: { id: true, orderNumber: true } },
           lineItems: {
             include: {
-              variant: { select: { id: true, code: true, name: true } },
+              variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
             },
           },
         },
@@ -346,7 +368,7 @@ export class GatePassService {
         client: { select: { id: true, name: true } },
         lineItems: {
           include: {
-            variant: { select: { id: true, code: true, name: true } },
+            variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
           },
         },
       },
@@ -397,7 +419,7 @@ export class GatePassService {
         client: { select: { id: true, name: true } },
         lineItems: {
           include: {
-            variant: { select: { id: true, code: true, name: true } },
+            variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
           },
         },
       },
@@ -492,7 +514,7 @@ export class GatePassService {
           order: { select: { id: true, orderNumber: true } },
           lineItems: {
             include: {
-              variant: { select: { id: true, code: true, name: true } },
+              variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
             },
           },
         },
@@ -550,7 +572,7 @@ export class GatePassService {
           order: { select: { id: true, orderNumber: true } },
           lineItems: {
             include: {
-              variant: { select: { id: true, code: true, name: true } },
+              variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
             },
           },
         },
@@ -608,7 +630,7 @@ export class GatePassService {
         order: { select: { id: true, orderNumber: true, metersOrdered: true, metersDelivered: true, status: true } },
         lineItems: {
           include: {
-            variant: { select: { id: true, code: true, name: true } },
+            variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
           },
         },
         journalEntry: {
@@ -655,7 +677,7 @@ export class GatePassService {
   async getVariants() {
     return prisma.zipperVariant.findMany({
       where: { isDeleted: false },
-      select: { id: true, code: true, name: true },
+      select: { id: true, code: true, name: true, metersPerCarton: true },
       orderBy: { code: 'asc' },
     });
   }
@@ -678,9 +700,10 @@ export class GatePassService {
         lineItems: {
           select: {
             variantId: true,
-            variant: { select: { id: true, code: true, name: true } },
+            variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
             metersOrdered: true,
             metersDelivered: true,
+            ratePerMeterPaisa: true,
           },
         },
       },

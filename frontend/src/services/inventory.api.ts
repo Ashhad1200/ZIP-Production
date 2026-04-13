@@ -2,7 +2,7 @@ import api from './api';
 import type { PaginatedResponse } from '../types';
 
 // Types
-export interface VariantRef { id: string; code: string; name: string; }
+export interface VariantRef { id: string; code: string; name: string; metersPerCarton?: number | null; }
 export interface GrainTypeRef { id: string; code: string; name: string; }
 
 export interface FinishedGoodsStockItem {
@@ -28,6 +28,7 @@ export interface RawMaterialStockItem {
 export interface PurchaseRecord {
   id: string;
   grainType: GrainTypeRef;
+  vendor: { id: string; name: string } | null;
   numberOfBags: number;
   ratePerBagPaisa: number;
   ratePerBagDisplay: string;
@@ -40,6 +41,7 @@ export interface PurchaseRecord {
 
 export interface CreatePurchasePayload {
   grainTypeId: string;
+  vendorId?: string;
   numberOfBags: number;
   ratePerBagPaisa: number;
   purchaseDate: string;
@@ -156,4 +158,52 @@ export const inventoryApi = {
 
   createElectricityRate: (data: CreateElectricityRatePayload) =>
     api.post<{ data: ElectricityRate }>('/inventory/electricity-rates', data).then(r => r.data),
+};
+
+// ─── Packaging Inventory API ─────────────────────────────────────────────────
+
+export interface PackagingMaterial {
+  id: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  ratePerUnitPaisa: number;
+  lowStockThreshold: number | null;
+  notes: string | null;
+  isActive: boolean;
+  isBelowThreshold: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PackagingAdjustment {
+  id: string;
+  materialId: string;
+  quantity: number;
+  type: string;
+  unitRatePaisa: number | null;
+  totalCostPaisa: number | null;
+  vendorId: string | null;
+  purchaseDate: string | null;
+  vendor: { id: string; name: string } | null;
+  notes: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export const packagingApi = {
+  listMaterials: () =>
+    api.get<{ data: PackagingMaterial[] }>('/packaging').then((r) => r.data),
+
+  createMaterial: (data: { name: string; unit?: string; ratePerUnitPaisa?: number; lowStockThreshold?: number; notes?: string }) =>
+    api.post<{ data: PackagingMaterial }>('/packaging', data).then((r) => r.data),
+
+  updateMaterial: (id: string, data: { name?: string; unit?: string; ratePerUnitPaisa?: number; lowStockThreshold?: number | null; notes?: string | null; isActive?: boolean }) =>
+    api.put<{ data: PackagingMaterial }>(`/packaging/${id}`, data).then((r) => r.data),
+
+  listAdjustments: (materialId: string) =>
+    api.get<{ data: PackagingAdjustment[] }>(`/packaging/${materialId}/adjustments`).then((r) => r.data),
+
+  recordAdjustment: (materialId: string, data: { quantity: number; type: string; notes?: string; vendorId?: string; purchaseDate?: string; ratePerUnitPaisa?: number }) =>
+    api.post<{ data: PackagingMaterial }>(`/packaging/${materialId}/adjustments`, data).then((r) => r.data),
 };

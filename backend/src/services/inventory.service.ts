@@ -205,7 +205,7 @@ export class InventoryService {
         ...(variantId ? { variantId } : {}),
       },
       include: {
-        variant: { select: { id: true, code: true, name: true } },
+        variant: { select: { id: true, code: true, name: true, metersPerCarton: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -297,6 +297,7 @@ export class InventoryService {
         orderBy: { purchaseDate: 'desc' },
         include: {
           grainType: { select: { id: true, code: true, name: true } },
+          vendor: { select: { id: true, name: true } },
         },
       }),
       prisma.rawMaterialPurchase.count({ where }),
@@ -305,6 +306,7 @@ export class InventoryService {
     const data = purchases.map((p) => ({
       id: p.id,
       grainType: p.grainType,
+      vendor: p.vendor,
       numberOfBags: Number(p.numberOfBags),
       ratePerBagPaisa: Number(p.ratePerBagPaisa),
       ratePerBagDisplay: formatPaisaToRupees(p.ratePerBagPaisa),
@@ -324,6 +326,7 @@ export class InventoryService {
   async recordPurchase(
     input: {
       grainTypeId: string;
+      vendorId?: string;
       numberOfBags: number;
       ratePerBagPaisa: number;
       purchaseDate: string;
@@ -387,6 +390,7 @@ export class InventoryService {
       const purchase = await tx.rawMaterialPurchase.create({
         data: {
           grainTypeId: input.grainTypeId,
+          vendorId: input.vendorId || null,
           numberOfBags: new Prisma.Decimal(input.numberOfBags),
           ratePerBagPaisa: BigInt(input.ratePerBagPaisa),
           totalAmountPaisa,
@@ -671,7 +675,7 @@ export class InventoryService {
   /**
    * Check stock level and send low-stock notification if below threshold.
    */
-  async checkAndNotifyLowStock(type: 'raw_material' | 'finished_goods', entityId: string) {
+  async checkAndNotifyLowStock(type: 'raw_material' | 'finished_goods' | 'packaging', entityId: string) {
     if (type === 'raw_material') {
       const stock = await prisma.rawMaterialStock.findUnique({
         where: { grainTypeId: entityId },
@@ -693,7 +697,7 @@ export class InventoryService {
           referenceId: stock.id,
         });
       }
-    } else {
+    } else if (type === 'finished_goods') {
       const stock = await prisma.finishedGoodsStock.findUnique({
         where: { variantId: entityId },
         include: { variant: true },
@@ -709,6 +713,23 @@ export class InventoryService {
           message: `${stock.variant.name} (${stock.variant.code}) stock is low: ${stock.currentMeters} meters remaining (threshold: ${stock.lowStockThreshold} meters).`,
           referenceType: 'FinishedGoodsStock',
           referenceId: stock.id,
+        });
+      }
+    } else {
+      const material = await prisma.packagingMaterial.findUnique({
+        where: { id: entityId },
+      });
+
+      if (!material || material.lowStockThreshold == null) return;
+
+      if (material.currentStock < material.lowStockThreshold) {
+        await notificationService.notifyRole({
+          recipientRole: Role.SUPER_ADMIN,
+          type: NotificationType.LOW_STOCK,
+          title: 'Low Packaging Stock',
+          message: `${material.name} stock is low: ${material.currentStock} ${material.unit} remaining (threshold: ${material.lowStockThreshold} ${material.unit}).`,
+          referenceType: 'PackagingMaterial',
+          referenceId: material.id,
         });
       }
     }

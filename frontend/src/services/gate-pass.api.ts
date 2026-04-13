@@ -15,6 +15,7 @@ export interface VariantRef {
   id: string;
   code: string;
   name: string;
+  metersPerCarton?: number | null;
 }
 
 export interface GatePassLineItem {
@@ -71,7 +72,7 @@ export interface CreateGatePassPayload {
   date: string;
   shift: Shift;
   orderId?: string;
-  lineItems: { variantId: string; meters: number }[];
+  lineItems: { variantId: string; meters: number; ratePerMeterPaisa?: number }[];
 }
 
 export interface ClientLookup {
@@ -84,6 +85,7 @@ export interface VariantLookup {
   id: string;
   code: string;
   name: string;
+  metersPerCarton?: number | null;
 }
 
 export interface ClientOrderLineItem {
@@ -91,6 +93,7 @@ export interface ClientOrderLineItem {
   variant: VariantRef;
   metersOrdered: number;
   metersDelivered: number;
+  ratePerMeterPaisa?: string | number; // BigInt comes as string from Prisma JSON
 }
 
 export interface ClientOrder {

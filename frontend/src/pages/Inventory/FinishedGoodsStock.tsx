@@ -67,6 +67,16 @@ export function FinishedGoodsStock() {
       render: (row) => row.currentMeters.toLocaleString(),
     },
     {
+      key: 'cartons',
+      header: 'Cartons',
+      hideOnMobile: true,
+      render: (row) => {
+        const mpc = row.variant.metersPerCarton;
+        if (!mpc || mpc <= 0) return <span className="text-gray-400">—</span>;
+        return Math.ceil(row.currentMeters / mpc).toLocaleString();
+      },
+    },
+    {
       key: 'threshold',
       header: 'Threshold',
       hideOnMobile: true,
@@ -90,33 +100,40 @@ export function FinishedGoodsStock() {
   ];
 
   // ── Mobile card ──────────────────────────────────────────────────────────
-  const mobileCard = (row: FinishedGoodsStockItem) => (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-900">
-          {row.variant.name}
-        </span>
-        {stockBadge(row)}
+  const mobileCard = (row: FinishedGoodsStockItem) => {
+    const mpc = row.variant.metersPerCarton;
+    const cartons = mpc && mpc > 0 ? Math.ceil(row.currentMeters / mpc) : null;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-900">
+            {row.variant.name}
+          </span>
+          {stockBadge(row)}
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-mono text-xs text-gray-500">
+            {row.variant.code}
+          </span>
+          <span className="font-medium">
+            {row.currentMeters.toLocaleString()} m
+            {cartons != null && (
+              <span className="ml-1 text-xs text-gray-500">({cartons} ctn)</span>
+            )}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>
+            Threshold:{' '}
+            {row.lowStockThreshold !== null
+              ? row.lowStockThreshold.toLocaleString()
+              : '—'}
+          </span>
+          <span>{formatDatePKT(row.lastUpdated)}</span>
+        </div>
       </div>
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-mono text-xs text-gray-500">
-          {row.variant.code}
-        </span>
-        <span className="font-medium">
-          {row.currentMeters.toLocaleString()} m
-        </span>
-      </div>
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>
-          Threshold:{' '}
-          {row.lowStockThreshold !== null
-            ? row.lowStockThreshold.toLocaleString()
-            : '—'}
-        </span>
-        <span>{formatDatePKT(row.lastUpdated)}</span>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div>
