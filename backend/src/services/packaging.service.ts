@@ -180,6 +180,22 @@ export class PackagingService {
     });
     return adjustments.map((a) => this.serializeAdjustment(a));
   }
+
+  async listAllPurchases() {
+    const adjustments = await prisma.packagingStockAdjustment.findMany({
+      where: { type: 'PURCHASE' },
+      include: {
+        vendor: { select: { id: true, name: true } },
+        material: { select: { id: true, name: true, unit: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return adjustments.map((a) => ({
+      ...this.serializeAdjustment(a),
+      material: (a as any).material ?? null,
+    }));
+  }
 }
 
 export const packagingService = new PackagingService();

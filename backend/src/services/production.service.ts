@@ -99,7 +99,14 @@ export class ProductionService {
       }
 
       // Create entry in IN_PRODUCTION status — no stock changes yet
-      const workerAssignments: WorkerAssignment[] = input.workers ?? (input.workerIds ?? []).map((id) => ({ workerId: id }));
+      const rawAssignments: WorkerAssignment[] = input.workers ?? (input.workerIds ?? []).map((id) => ({ workerId: id }));
+      // Deduplicate by workerId to prevent unique constraint violation
+      const seen = new Set<string>();
+      const workerAssignments = rawAssignments.filter((a) => {
+        if (seen.has(a.workerId)) return false;
+        seen.add(a.workerId);
+        return true;
+      });
       const entry = await tx.productionEntry.create({
         data: {
           plantId: input.plantId,
@@ -188,6 +195,7 @@ export class ProductionService {
               variant: {
                 include: {
                   grainType: true,
+                  packagingMaterial: true,
                   ingredients: { include: { grainType: true } },
                 },
               },
@@ -347,6 +355,49 @@ export class ProductionService {
           create: { variantId: vc.variantId, currentMeters: vc.metersProduced, createdBy: userId, updatedBy: userId },
           update: { currentMeters: { increment: vc.metersProduced }, updatedBy: userId },
         });
+
+        if (variant.packagingMaterialId && variant.metersPerCarton && variant.metersPerCarton > 0 && vc.metersProduced > 0) {
+          const packagingUnitsUsed = Math.ceil(vc.metersProduced / variant.metersPerCarton);
+          const packagingMaterial = await tx.packagingMaterial.findUnique({
+            where: { id: variant.packagingMaterialId },
+          });
+
+          if (!packagingMaterial) {
+            throw Object.assign(
+              new Error(`Packaging material is not configured correctly for variant ${variant.code}`),
+              { statusCode: 422, code: 'PACKAGING_NOT_CONFIGURED' }
+            );
+          }
+
+          if (packagingMaterial.currentStock < packagingUnitsUsed) {
+            throw Object.assign(
+              new Error(`Insufficient packaging stock for ${packagingMaterial.name}. Available: ${packagingMaterial.currentStock} ${packagingMaterial.unit}, Required: ${packagingUnitsUsed} ${packagingMaterial.unit}`),
+              { statusCode: 422, code: 'INSUFFICIENT_PACKAGING' }
+            );
+          }
+
+          const unitRatePaisa = packagingMaterial.ratePerUnitPaisa;
+          await tx.packagingStockAdjustment.create({
+            data: {
+              materialId: packagingMaterial.id,
+              quantity: -packagingUnitsUsed,
+              type: 'PRODUCTION_CONSUMPTION',
+              unitRatePaisa,
+              totalCostPaisa: unitRatePaisa * BigInt(packagingUnitsUsed),
+              referenceType: 'ProductionEntry',
+              referenceId: id,
+              notes: `Auto deduction for ${variant.code} production (${vc.metersProduced} meters)`,
+              createdBy: userId,
+            },
+          });
+
+          await tx.packagingMaterial.update({
+            where: { id: packagingMaterial.id },
+            data: { currentStock: { decrement: packagingUnitsUsed } },
+          });
+
+          await inventoryService.checkAndNotifyLowStock('packaging', packagingMaterial.id);
+        }
 
         // Update the ProductionShiftVariant record with actuals
         await tx.productionShiftVariant.update({
@@ -509,6 +560,10 @@ export class ProductionService {
           name: sv.variant.name,
           standardGramsPerMeter: Number(sv.variant.standardGramsPerMeter),
           grainType: sv.variant.grainType,
+          ingredients: sv.variant.ingredients.map((i) => ({
+            grainTypeName: i.grainType.name,
+            ratioPercent: Number(i.ratioPercent),
+          })),
         },
         metersProduced: sv.metersProduced,
         gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
@@ -571,7 +626,17 @@ export class ProductionService {
           plant: { select: { id: true, name: true } },
           machine: { select: { id: true, identifier: true } },
           shiftVariants: {
-            include: { variant: { select: { id: true, code: true, name: true } } },
+            include: {
+              variant: {
+                select: {
+                  id: true, code: true, name: true,
+                  ingredients: {
+                    select: { ratioPercent: true, grainType: { select: { name: true } } },
+                    orderBy: { ratioPercent: 'desc' },
+                  },
+                },
+              },
+            },
           },
           workers: { include: { worker: { select: { id: true, name: true } } } },
         },
@@ -589,7 +654,15 @@ export class ProductionService {
       shiftVariants: entry.shiftVariants.map((sv) => ({
         id: sv.id,
         variantId: sv.variantId,
-        variant: sv.variant,
+        variant: {
+          id: sv.variant.id,
+          code: sv.variant.code,
+          name: sv.variant.name,
+          ingredients: sv.variant.ingredients.map((i) => ({
+            grainTypeName: i.grainType.name,
+            ratioPercent: Number(i.ratioPercent),
+          })),
+        },
         metersProduced: sv.metersProduced,
         gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
         scrapWeightGrams: sv.scrapWeightGrams,
@@ -1138,6 +1211,28 @@ export class ProductionService {
       select: { id: true, code: true, name: true, standardGramsPerMeter: true },
       orderBy: { code: 'asc' },
     });
+  }
+
+  async unlockEntry(id: string, userId: string) {
+    const existing = await prisma.productionEntry.findFirst({ where: { id, isDeleted: false } });
+    if (!existing) {
+      throw Object.assign(new Error('Production entry not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+    if (existing.status !== ProductionStatus.COMPLETED) {
+      throw Object.assign(new Error('Only COMPLETED entries can be unlocked'), { statusCode: 409, code: 'INVALID_STATUS' });
+    }
+    const updated = await prisma.productionEntry.update({
+      where: { id },
+      data: { status: ProductionStatus.IN_PRODUCTION, updatedBy: userId },
+    });
+    await auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entityType: 'ProductionEntry',
+      entityId: id,
+      newValue: { action: 'UNLOCK', previousStatus: 'COMPLETED', newStatus: 'IN_PRODUCTION' },
+    });
+    return updated;
   }
 }
 

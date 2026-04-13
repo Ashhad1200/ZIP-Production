@@ -204,6 +204,9 @@ export const packagingApi = {
   listAdjustments: (materialId: string) =>
     api.get<{ data: PackagingAdjustment[] }>(`/packaging/${materialId}/adjustments`).then((r) => r.data),
 
+  listAllPurchases: () =>
+    api.get<{ data: (PackagingAdjustment & { material?: { id: string; name: string; unit: string } | null })[] }>('/packaging/purchases').then((r) => r.data),
+
   recordAdjustment: (materialId: string, data: { quantity: number; type: string; notes?: string; vendorId?: string; purchaseDate?: string; ratePerUnitPaisa?: number }) =>
     api.post<{ data: PackagingMaterial }>(`/packaging/${materialId}/adjustments`, data).then((r) => r.data),
 };

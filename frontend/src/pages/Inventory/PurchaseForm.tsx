@@ -264,6 +264,8 @@ function SeedPurchases() {
 
 // ─── Packaging Purchases ────────────────────────────────────────────────────
 
+type PurchaseRow = PackagingAdjustment & { material?: { id: string; name: string; unit: string } | null };
+
 function PackagingPurchases() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -276,23 +278,30 @@ function PackagingPurchases() {
 
   const [selectedMaterialId, setSelectedMaterialId] = useState('');
 
-  const { data: adjustmentsResp, isLoading: loadingAdjustments } = useQuery({
-    queryKey: ['packaging-purchases', selectedMaterialId],
-    queryFn: () => packagingApi.listAdjustments(selectedMaterialId),
-    enabled: !!selectedMaterialId,
+  // Always fetch all purchases
+  const { data: purchasesResp, isLoading: loadingPurchases } = useQuery({
+    queryKey: ['packaging-all-purchases'],
+    queryFn: packagingApi.listAllPurchases,
   });
 
-  // Show purchase-type adjustments for all materials or filtered
-  const allPurchases = (adjustmentsResp?.data ?? []).filter(
-    (a) => a.type === 'PURCHASE'
+  // Filter by material if one is selected
+  const allPurchases: PurchaseRow[] = (purchasesResp?.data ?? []).filter(
+    (a) => !selectedMaterialId || a.materialId === selectedMaterialId
   );
 
-  const columns: Column<PackagingAdjustment>[] = [
+  const columns: Column<PurchaseRow>[] = [
     {
       key: 'createdAt',
       header: 'Date',
       sortable: true,
       render: (row) => formatDatePKT(row.purchaseDate || row.createdAt),
+    },
+    {
+      key: 'material',
+      header: 'Material',
+      render: (row) => (
+        <span className="font-medium capitalize">{row.material?.name ?? '—'}</span>
+      ),
     },
     {
       key: 'vendor',
@@ -328,7 +337,7 @@ function PackagingPurchases() {
     },
   ];
 
-  const mobileCard = (row: PackagingAdjustment) => (
+  const mobileCard = (row: PurchaseRow) => (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-900">
@@ -339,14 +348,17 @@ function PackagingPurchases() {
         </span>
       </div>
       <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-500">{row.vendor?.name ?? 'No vendor'}</span>
+        <span className="capitalize font-medium">{row.material?.name ?? '—'}</span>
         <span>{row.quantity} units</span>
       </div>
-      {row.unitRatePaisa != null && (
-        <div className="text-xs text-gray-500">
-          @ {formatPaisaToRupees(row.unitRatePaisa)}/unit
-        </div>
-      )}
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-gray-500">{row.vendor?.name ?? 'No vendor'}</span>
+        {row.unitRatePaisa != null && (
+          <span className="text-xs text-gray-500">
+            @ {formatPaisaToRupees(row.unitRatePaisa)}/unit
+          </span>
+        )}
+      </div>
     </div>
   );
 
@@ -356,7 +368,7 @@ function PackagingPurchases() {
         <div className="w-full sm:w-64">
           <SearchableSelect
             options={[
-              { value: '', label: 'Select Packaging Material' },
+              { value: '', label: 'All Materials' },
               ...materials.map((m) => ({
                 value: m.id,
                 label: `${m.name} (${m.currentStock} ${m.unit})`,
@@ -364,7 +376,7 @@ function PackagingPurchases() {
             ]}
             value={selectedMaterialId}
             onChange={setSelectedMaterialId}
-            placeholder="Select packaging material..."
+            placeholder="Filter by material..."
           />
         </div>
         <button
@@ -376,22 +388,16 @@ function PackagingPurchases() {
         </button>
       </div>
 
-      {!selectedMaterialId ? (
-        <div className="rounded-lg border bg-white p-8 text-center text-sm text-gray-500">
-          Select a packaging material above to view purchase history
-        </div>
-      ) : (
-        <div className="rounded-lg border bg-white">
-          <DataTable
-            columns={columns}
-            data={allPurchases}
-            isLoading={loadingAdjustments}
-            keyExtractor={(row) => row.id}
-            mobileCard={mobileCard}
-            emptyMessage="No packaging purchases recorded for this material"
-          />
-        </div>
-      )}
+      <div className="rounded-lg border bg-white">
+        <DataTable
+          columns={columns}
+          data={allPurchases}
+          isLoading={loadingPurchases}
+          keyExtractor={(row) => row.id}
+          mobileCard={mobileCard}
+          emptyMessage="No packaging purchases recorded yet"
+        />
+      </div>
 
       {showForm && (
         <PackagingPurchaseFormModal
@@ -399,7 +405,7 @@ function PackagingPurchases() {
           onClose={() => setShowForm(false)}
           onSuccess={() => {
             setShowForm(false);
-            queryClient.invalidateQueries({ queryKey: ['packaging-purchases'] });
+            queryClient.invalidateQueries({ queryKey: ['packaging-all-purchases'] });
             queryClient.invalidateQueries({ queryKey: ['packaging-materials'] });
           }}
         />

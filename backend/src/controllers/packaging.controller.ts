@@ -62,6 +62,13 @@ export class PackagingController {
       res.json({ data });
     } catch (error) { next(error); }
   }
+
+  async listAllPurchases(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await packagingService.listAllPurchases();
+      res.json({ data });
+    } catch (error) { next(error); }
+  }
 }
 
 export const packagingController = new PackagingController();
