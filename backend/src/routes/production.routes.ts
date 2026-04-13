@@ -62,6 +62,13 @@ router.get(
   productionController.listScrapSales.bind(productionController)
 );
 
+router.get(
+  '/scrap-sales/monthly-summary',
+  authenticate,
+  rbac(...readRoles),
+  productionController.getScrapMonthlySummary.bind(productionController)
+);
+
 router.post(
   '/scrap-sales',
   authenticate,
@@ -97,6 +104,14 @@ router.get(
   authenticate,
   rbac(...readRoles),
   productionController.getVariants.bind(productionController)
+);
+
+// Unlock completed entry (SUPER_ADMIN only)
+router.post(
+  '/entries/:id/unlock',
+  authenticate,
+  rbac(...adminOnly),
+  productionController.unlockEntry.bind(productionController)
 );
 
 export default router;

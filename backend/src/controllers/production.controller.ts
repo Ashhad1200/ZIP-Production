@@ -168,6 +168,15 @@ export class ProductionController {
     }
   }
 
+  async getScrapMonthlySummary(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await productionService.getScrapMonthlySummary();
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async listDiscrepancies(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { page, limit, plantId, dateFrom, dateTo } = req.query;
@@ -206,6 +215,17 @@ export class ProductionController {
     try {
       const variants = await productionService.getVariants();
       res.json({ data: variants });
+    } catch (error) {
+      next(error);
+    }
+  }
+  async unlockEntry(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await productionService.unlockEntry(
+        String(req.params.id),
+        req.user!.userId,
+      );
+      res.json({ data: result });
     } catch (error) {
       next(error);
     }

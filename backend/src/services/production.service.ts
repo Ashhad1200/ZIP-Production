@@ -1118,6 +1118,33 @@ export class ProductionService {
   }
 
   /**
+   * Monthly summary of scrap sales, grouped by month.
+   */
+  async getScrapMonthlySummary() {
+    const sales = await prisma.scrapSale.findMany({
+      where: { isDeleted: false },
+      select: { date: true, totalWeightKg: true, totalAmountPaisa: true },
+      orderBy: { date: 'asc' },
+    });
+
+    const monthMap = new Map<string, { totalWeightKg: number; totalPaisa: number; count: number }>();
+
+    for (const sale of sales) {
+      const d = new Date(sale.date);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const existing = monthMap.get(key) ?? { totalWeightKg: 0, totalPaisa: 0, count: 0 };
+      existing.totalWeightKg += Number(sale.totalWeightKg);
+      existing.totalPaisa += Number(sale.totalAmountPaisa);
+      existing.count += 1;
+      monthMap.set(key, existing);
+    }
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, data]) => ({ month, ...data }));
+  }
+
+  /**
    * List electricity discrepancy alerts (Super Admin only).
    */
   async listDiscrepancies(params: { page: number; limit: number; plantId?: string; dateFrom?: string; dateTo?: string }) {

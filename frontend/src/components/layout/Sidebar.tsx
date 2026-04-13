@@ -38,10 +38,20 @@ const navItems: NavItem[] = [
     path: '/production',
     icon: <Factory size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD],
+    children: [
+      { label: 'Entries & DPR', path: '/production', roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD] },
+      { label: 'Scrap Sales', path: '/production/scrap-sales', roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD] },
+    ],
   },
   {
     label: 'Cost Price',
     path: '/cost-price',
+    icon: <TrendingDown size={20} />,
+    roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+  },
+  {
+    label: 'Monthly Overhead',
+    path: '/monthly-overhead',
     icon: <TrendingDown size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
   },
@@ -80,6 +90,11 @@ const navItems: NavItem[] = [
         label: 'Electricity Rates',
         path: '/inventory/electricity-rates',
         roles: [ROLES.SUPER_ADMIN],
+      },
+      {
+        label: 'Packaging',
+        path: '/inventory/packaging',
+        roles: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_HEAD, ROLES.FINANCE_HEAD, ROLES.LOGISTICS_HEAD],
       },
     ],
   },
