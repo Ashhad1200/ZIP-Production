@@ -32,6 +32,20 @@ export class CostPriceController {
       next(error);
     }
   }
+
+  async getMonthlySummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { year, plantId, variantId } = req.query;
+      const result = await costPriceService.getMonthlySummary({
+        year: parseInt(year as string) || new Date().getFullYear(),
+        plantId: plantId as string | undefined,
+        variantId: variantId as string | undefined,
+      });
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const costPriceController = new CostPriceController();

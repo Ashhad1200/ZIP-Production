@@ -1,18 +1,29 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TrendingDown, Zap, Package, Users, ChevronDown, ChevronUp, Boxes, FlaskConical, Recycle, BarChart3 } from 'lucide-react';
-import { costPriceApi, type ShiftCostBreakdown } from '../../services/cost-price.api';
+import { TrendingDown, Zap, Package, Users, ChevronDown, ChevronUp, Boxes, FlaskConical, Recycle, BarChart3, Calendar } from 'lucide-react';
+import { costPriceApi, type ShiftCostBreakdown, type MonthlyCostRow } from '../../services/cost-price.api';
 import { LoadingSpinner } from '../../components/ui';
 
+type ViewMode = 'per-shift' | 'monthly';
+
 export function CostPriceReport() {
+  const [viewMode, setViewMode] = useState<ViewMode>('per-shift');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['cost-price', { dateFrom, dateTo, page }],
     queryFn: () => costPriceApi.list({ dateFrom: dateFrom || undefined, dateTo: dateTo || undefined, page, limit: 30 }),
+    enabled: viewMode === 'per-shift',
+  });
+
+  const { data: monthlyData, isLoading: monthlyLoading, error: monthlyError } = useQuery({
+    queryKey: ['cost-price-monthly', summaryYear],
+    queryFn: () => costPriceApi.getMonthlySummary({ year: summaryYear }),
+    enabled: viewMode === 'monthly',
   });
 
   const toggleExpand = (id: string) =>
@@ -26,35 +37,69 @@ export function CostPriceReport() {
         <p className="text-sm text-gray-500">Per-shift cost breakdown with scrap credit &amp; percentage analysis</p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">From</label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-            className="rounded-lg border px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">To</label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-            className="rounded-lg border px-3 py-2 text-sm"
-          />
-        </div>
-        {(dateFrom || dateTo) && (
-          <button
-            className="self-end rounded-lg border px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
-          >
-            Clear
-          </button>
-        )}
+      {/* View mode toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setViewMode('per-shift')}
+          className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${
+            viewMode === 'per-shift'
+              ? 'bg-blue-600 text-white shadow'
+              : 'border bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <BarChart3 size={16} /> Per-Shift
+        </button>
+        <button
+          onClick={() => setViewMode('monthly')}
+          className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${
+            viewMode === 'monthly'
+              ? 'bg-blue-600 text-white shadow'
+              : 'border bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Calendar size={16} /> Monthly Summary
+        </button>
       </div>
+
+      {viewMode === 'monthly' ? (
+        <MonthlySummaryView
+          year={summaryYear}
+          onYearChange={setSummaryYear}
+          data={monthlyData ?? null}
+          isLoading={monthlyLoading}
+          error={monthlyError}
+        />
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 rounded-lg border bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+                className="rounded-lg border px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+                className="rounded-lg border px-3 py-2 text-sm"
+              />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button
+                className="self-end rounded-lg border px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
       {/* Summary cards */}
       {data?.summary && (
@@ -181,6 +226,8 @@ export function CostPriceReport() {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -422,6 +469,154 @@ function CostBreakdownDetail({ row }: { row: ShiftCostBreakdown }) {
           <span className="text-red-700">{row.totalCostDisplay}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MonthlySummaryView({
+  year,
+  onYearChange,
+  data,
+  isLoading,
+  error,
+}: {
+  year: number;
+  onYearChange: (y: number) => void;
+  data: { year: number; months: MonthlyCostRow[]; yearSummary: { totalMeters: number; totalEntries: number; totalCostDisplay: string; avgCostPerMeterDisplay: string } } | null;
+  isLoading: boolean;
+  error: Error | null;
+}) {
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+  return (
+    <div className="space-y-6">
+      {/* Year selector */}
+      <div className="flex flex-wrap gap-3 rounded-lg border bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-gray-500">Year</label>
+          <select
+            value={year}
+            onChange={(e) => onYearChange(parseInt(e.target.value))}
+            className="rounded-lg border px-3 py-2 text-sm"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {isLoading && <LoadingSpinner />}
+      {error && <p className="text-red-600">Failed to load monthly summary</p>}
+
+      {data && (
+        <>
+          {/* Year summary cards */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <SummaryCard
+              label="Year Total Meters"
+              value={data.yearSummary.totalMeters.toLocaleString()}
+              icon={<Package size={20} />}
+              color="blue"
+            />
+            <SummaryCard
+              label="Year Total Cost"
+              value={data.yearSummary.totalCostDisplay}
+              icon={<TrendingDown size={20} />}
+              color="red"
+            />
+            <SummaryCard
+              label="Year Avg Cost/m"
+              value={data.yearSummary.avgCostPerMeterDisplay}
+              icon={<TrendingDown size={20} />}
+              color="orange"
+            />
+            <SummaryCard
+              label="Total Entries"
+              value={String(data.yearSummary.totalEntries)}
+              icon={<Calendar size={20} />}
+              color="purple"
+            />
+          </div>
+
+          {/* Monthly bar visualization */}
+          {data.months.some((m) => m.totalMeters > 0) && (
+            <div className="rounded-lg border bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold text-gray-700">Monthly Production (meters)</h3>
+              <div className="flex items-end gap-2" style={{ height: 180 }}>
+                {data.months.map((m) => {
+                  const maxMeters = Math.max(...data.months.map((x) => x.totalMeters), 1);
+                  const pct = (m.totalMeters / maxMeters) * 100;
+                  return (
+                    <div key={m.month} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="text-xs text-gray-500">{m.totalMeters > 0 ? m.totalMeters.toLocaleString() : ''}</span>
+                      <div
+                        className="w-full rounded-t bg-blue-500 transition-all"
+                        style={{ height: `${Math.max(pct, m.totalMeters > 0 ? 4 : 0)}%`, minHeight: m.totalMeters > 0 ? 4 : 0 }}
+                      />
+                      <span className="text-xs text-gray-500">{m.monthLabel.slice(0, 3)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Monthly table */}
+          <div className="rounded-lg border bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-3 text-left">Month</th>
+                    <th className="px-3 py-3 text-right">Entries</th>
+                    <th className="px-3 py-3 text-right">Meters</th>
+                    <th className="px-3 py-3 text-right">Raw Material</th>
+                    <th className="px-3 py-3 text-right">Electricity</th>
+                    <th className="px-3 py-3 text-right">Labor</th>
+                    <th className="px-3 py-3 text-right">Packaging</th>
+                    <th className="px-3 py-3 text-right">Overhead</th>
+                    <th className="px-3 py-3 text-right">Scrap Cr.</th>
+                    <th className="px-3 py-3 text-right">Total Cost</th>
+                    <th className="px-3 py-3 text-right">Avg/m</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {data.months.map((m) => (
+                    <tr
+                      key={m.month}
+                      className={m.totalMeters > 0 ? 'hover:bg-gray-50' : 'text-gray-300'}
+                    >
+                      <td className="px-3 py-2.5 font-medium text-gray-700">{m.monthLabel}</td>
+                      <td className="px-3 py-2.5 text-right">{m.totalEntries || '—'}</td>
+                      <td className="px-3 py-2.5 text-right">{m.totalMeters > 0 ? m.totalMeters.toLocaleString() : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-green-700">{m.totalMeters > 0 ? m.rawMaterialDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-blue-700">{m.totalMeters > 0 ? m.electricityDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-purple-700">{m.totalMeters > 0 ? m.laborDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-amber-700">{m.totalMeters > 0 ? m.packagingDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-orange-600">{m.totalMeters > 0 ? m.overheadDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-teal-600">{m.scrapCreditPaisa > 0 ? `-${m.scrapCreditDisplay}` : '—'}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold">{m.totalMeters > 0 ? m.totalCostDisplay : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-orange-700 font-medium">{m.totalMeters > 0 ? m.avgCostPerMeterDisplay : '—'}</td>
+                    </tr>
+                  ))}
+
+                  {/* Year total row */}
+                  <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
+                    <td className="px-3 py-2.5 text-gray-900">Total ({data.year})</td>
+                    <td className="px-3 py-2.5 text-right">{data.yearSummary.totalEntries}</td>
+                    <td className="px-3 py-2.5 text-right">{data.yearSummary.totalMeters.toLocaleString()}</td>
+                    <td colSpan={6} />
+                    <td className="px-3 py-2.5 text-right">{data.yearSummary.totalCostDisplay}</td>
+                    <td className="px-3 py-2.5 text-right text-orange-700">{data.yearSummary.avgCostPerMeterDisplay}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

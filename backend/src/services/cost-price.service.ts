@@ -529,6 +529,162 @@ export class CostPriceService {
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
+
+  /**
+   * Monthly cost summary: aggregates cost data by month for a given year.
+   */
+  async getMonthlySummary(params: {
+    year: number;
+    plantId?: string;
+    variantId?: string;
+  }) {
+    const { year, plantId, variantId } = params;
+
+    const months: {
+      month: number;
+      monthLabel: string;
+      totalMeters: number;
+      totalEntries: number;
+      rawMaterialPaisa: bigint;
+      electricityPaisa: bigint;
+      laborPaisa: bigint;
+      packagingPaisa: bigint;
+      overheadPaisa: bigint;
+      scrapCreditPaisa: bigint;
+      totalCostPaisa: bigint;
+      avgCostPerMeterPaisa: number;
+    }[] = [];
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+
+    for (let m = 1; m <= 12; m++) {
+      const monthStart = new Date(year, m - 1, 1);
+      const monthEnd = new Date(year, m, 1);
+
+      // Skip future months
+      if (monthStart > new Date()) break;
+
+      const entries = await prisma.productionEntry.findMany({
+        where: {
+          isDeleted: false,
+          status: 'COMPLETED',
+          metersProduced: { not: null },
+          date: { gte: monthStart, lt: monthEnd },
+          ...(plantId ? { plantId } : {}),
+          ...(variantId
+            ? { shiftVariants: { some: { variantId } } }
+            : {}),
+        },
+        select: { id: true },
+      });
+
+      if (entries.length === 0) {
+        months.push({
+          month: m,
+          monthLabel: monthNames[m - 1],
+          totalMeters: 0,
+          totalEntries: 0,
+          rawMaterialPaisa: 0n,
+          electricityPaisa: 0n,
+          laborPaisa: 0n,
+          packagingPaisa: 0n,
+          overheadPaisa: 0n,
+          scrapCreditPaisa: 0n,
+          totalCostPaisa: 0n,
+          avgCostPerMeterPaisa: 0,
+        });
+        continue;
+      }
+
+      // Calculate breakdown for each entry, then aggregate
+      const breakdowns = (
+        await Promise.all(entries.map((e) => this.calculateForEntry(e.id)))
+      ).filter(Boolean) as ShiftCostBreakdown[];
+
+      let totalMeters = 0;
+      let rawMaterialPaisa = 0n;
+      let electricityPaisa = 0n;
+      let laborPaisa = 0n;
+      let packagingPaisa = 0n;
+      let overheadPaisa = 0n;
+      let scrapCredit = 0n;
+      let totalCost = 0n;
+
+      for (const b of breakdowns) {
+        totalMeters += b.metersProduced;
+        rawMaterialPaisa += b.rawMaterialCostPaisa;
+        electricityPaisa += b.electricityCostPaisa;
+        laborPaisa += b.laborCostPaisa;
+        packagingPaisa += b.packagingCostPaisa;
+        overheadPaisa += BigInt(Math.round(b.overheadPerMeterPaisa * b.metersProduced));
+        scrapCredit += b.scrapCreditPaisa;
+        totalCost += b.totalCostPaisa;
+      }
+
+      months.push({
+        month: m,
+        monthLabel: monthNames[m - 1],
+        totalMeters,
+        totalEntries: breakdowns.length,
+        rawMaterialPaisa,
+        electricityPaisa,
+        laborPaisa,
+        packagingPaisa,
+        overheadPaisa,
+        scrapCreditPaisa: scrapCredit,
+        totalCostPaisa: totalCost,
+        avgCostPerMeterPaisa: totalMeters > 0 ? Number(totalCost) / totalMeters : 0,
+      });
+    }
+
+    // Format for JSON response
+    const formatted = months.map((m) => ({
+      month: m.month,
+      monthLabel: m.monthLabel,
+      totalMeters: m.totalMeters,
+      totalEntries: m.totalEntries,
+      rawMaterialDisplay: formatPaisaToRupees(m.rawMaterialPaisa),
+      electricityDisplay: formatPaisaToRupees(m.electricityPaisa),
+      laborDisplay: formatPaisaToRupees(m.laborPaisa),
+      packagingDisplay: formatPaisaToRupees(m.packagingPaisa),
+      overheadDisplay: formatPaisaToRupees(m.overheadPaisa),
+      scrapCreditDisplay: formatPaisaToRupees(m.scrapCreditPaisa),
+      totalCostDisplay: formatPaisaToRupees(m.totalCostPaisa),
+      avgCostPerMeterDisplay: formatPaisaToRupees(BigInt(Math.round(m.avgCostPerMeterPaisa))),
+      // Raw paisa values for chart rendering
+      rawMaterialPaisa: Number(m.rawMaterialPaisa),
+      electricityPaisa: Number(m.electricityPaisa),
+      laborPaisa: Number(m.laborPaisa),
+      packagingPaisa: Number(m.packagingPaisa),
+      overheadPaisa: Number(m.overheadPaisa),
+      scrapCreditPaisa: Number(m.scrapCreditPaisa),
+      totalCostPaisa: Number(m.totalCostPaisa),
+      avgCostPerMeterPaisa: m.avgCostPerMeterPaisa,
+    }));
+
+    // Yearly totals
+    const yearTotalMeters = months.reduce((s, m) => s + m.totalMeters, 0);
+    const yearTotalCost = months.reduce((s, m) => s + m.totalCostPaisa, 0n);
+    const yearTotalEntries = months.reduce((s, m) => s + m.totalEntries, 0);
+
+    return {
+      year,
+      months: formatted,
+      yearSummary: {
+        totalMeters: yearTotalMeters,
+        totalEntries: yearTotalEntries,
+        totalCostDisplay: formatPaisaToRupees(yearTotalCost),
+        totalCostPaisa: Number(yearTotalCost),
+        avgCostPerMeterDisplay: formatPaisaToRupees(
+          BigInt(Math.round(yearTotalMeters > 0 ? Number(yearTotalCost) / yearTotalMeters : 0))
+        ),
+        avgCostPerMeterPaisa: yearTotalMeters > 0 ? Number(yearTotalCost) / yearTotalMeters : 0,
+      },
+    };
+  }
 }
 
 export const costPriceService = new CostPriceService();

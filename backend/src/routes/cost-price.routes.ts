@@ -17,6 +17,13 @@ router.get(
 );
 
 router.get(
+  '/monthly-summary',
+  authenticate,
+  rbac(...allowedRoles),
+  costPriceController.getMonthlySummary.bind(costPriceController),
+);
+
+router.get(
   '/:id',
   authenticate,
   rbac(...allowedRoles),
