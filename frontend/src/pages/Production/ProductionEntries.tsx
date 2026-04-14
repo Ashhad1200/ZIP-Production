@@ -286,9 +286,7 @@ export function ProductionEntries() {
           totalPages={totalPages}
           onPageChange={setPage}
           onRowClick={(row) =>
-            row.status === 'IN_PRODUCTION'
-              ? navigate(`/production/${row.id}/complete`)
-              : navigate(`/production/${row.id}`)
+            navigate(`/production/${row.id}/complete`)
           }
           keyExtractor={(row) => row.id}
           mobileCard={mobileCard}
