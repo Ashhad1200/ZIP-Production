@@ -983,9 +983,9 @@ export class ProductionService {
       // Generate journal entry number
       const entryNumber = await generateSequenceNumber('JE', 'journalEntry');
 
-      // Get accounts for journal entry
-      const cashAccount = await accountingService.getAccountByCode('CASH', tx);
-      const scrapRevenueAccount = await accountingService.getAccountByCode('SCRAP-REVENUE', tx);
+      // Get accounts for journal entry (Cash = 1100, Scrap Sales Revenue = 4200)
+      const cashAccount = await accountingService.getAccountByCode('1100', tx);
+      const scrapRevenueAccount = await accountingService.getAccountByCode('4200', tx);
 
       // Create journal entry
       const journalEntry = await accountingService.createJournalEntry(
