@@ -118,17 +118,24 @@ export function ProductionEntryComplete() {
   if (!entry) return <div className="p-6 text-red-600">Entry not found.</div>;
 
   if (entry.status === 'COMPLETED') {
+    const totalMeters = entry.shiftVariants.reduce((s, sv) => s + sv.metersProduced, 0);
+    const totalScrapGrams = entry.shiftVariants.reduce((s, sv) => s + (sv.scrapWeightGrams ?? 0), 0);
+    const elecUnits = entry.electricityUnitsConsumed;
+
     return (
-      <div className="mx-auto max-w-xl p-6">
-        <div className="rounded-xl border border-green-200 bg-green-50 p-6 text-center">
-          <CheckCircle className="mx-auto mb-3 h-10 w-10 text-green-600" />
-          <p className="font-semibold text-green-800">This entry is already completed.</p>
-          <div className="mt-4 flex justify-center gap-3">
+      <div className="mx-auto max-w-3xl p-6">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Production Entry Detail</h1>
+            <p className="mt-1 text-sm text-gray-500">Completed shift record</p>
+          </div>
+          <div className="flex gap-3">
             <button
               onClick={() => navigate('/production')}
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
-              Back to List
+              ← Back
             </button>
             {isAdmin() && (
               <button
@@ -140,21 +147,130 @@ export function ProductionEntryComplete() {
                 disabled={unlockMutation.isPending}
                 className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
               >
-                {unlockMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <LockOpen className="h-4 w-4" />
-                )}
-                Unlock Entry
+                {unlockMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockOpen className="h-4 w-4" />}
+                Unlock
               </button>
             )}
           </div>
-          {toast && (
-            <p className={`mt-3 text-sm ${toast.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>
-              {toast.message}
-            </p>
-          )}
         </div>
+
+        {toast && (
+          <div className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
+            toast.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+          }`}>
+            {toast.message}
+          </div>
+        )}
+
+        {/* Status badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-800">
+          <CheckCircle size={16} /> Completed
+        </div>
+
+        {/* Info grid */}
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase">Date</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{entry.date}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase">Shift</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{entry.shift}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase">Plant</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{entry.plant.name}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase">Machine</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{entry.machine?.identifier ?? '—'}</p>
+          </div>
+        </div>
+
+        {/* Production summary cards */}
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border-l-4 border-blue-500 bg-blue-50 p-4">
+            <p className="text-xs font-medium text-blue-600 uppercase">Total Meters</p>
+            <p className="mt-1 text-2xl font-bold text-blue-900">{totalMeters.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border-l-4 border-amber-500 bg-amber-50 p-4">
+            <p className="text-xs font-medium text-amber-600 uppercase">Electricity Units</p>
+            <p className="mt-1 text-2xl font-bold text-amber-900">{elecUnits != null ? elecUnits.toLocaleString() : '—'}</p>
+            {entry.electricityStartReading != null && entry.electricityEndReading != null && (
+              <p className="mt-0.5 text-xs text-amber-600">{entry.electricityStartReading} → {entry.electricityEndReading}</p>
+            )}
+            {entry.hasElectricityDiscrepancy && (
+              <p className="mt-1 text-xs font-medium text-red-600">⚠ Discrepancy flagged</p>
+            )}
+          </div>
+          <div className="rounded-xl border-l-4 border-gray-500 bg-gray-50 p-4">
+            <p className="text-xs font-medium text-gray-600 uppercase">Scrap Weight</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">
+              {totalScrapGrams > 0 ? `${(totalScrapGrams / 1000).toFixed(2)} kg` : '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* Variants table */}
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-800">Variants Produced</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+                <tr>
+                  <th className="px-4 py-3">Variant</th>
+                  <th className="px-4 py-3">Recipe / Formula</th>
+                  <th className="px-4 py-3 text-right">Meters</th>
+                  <th className="px-4 py-3 text-right">Grams/Meter</th>
+                  <th className="px-4 py-3 text-right">Scrap (g)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {entry.shiftVariants.map((sv) => (
+                  <tr key={sv.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {sv.variant.code}
+                      <span className="ml-1 text-gray-500 font-normal">– {sv.variant.name}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {sv.variant.ingredients && sv.variant.ingredients.length > 0
+                        ? sv.variant.ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{sv.metersProduced.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{sv.gramsPerMeter ?? '—'}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{sv.scrapWeightGrams > 0 ? sv.scrapWeightGrams.toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Workers */}
+        {entry.workers && entry.workers.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-800">Workers</h3>
+            </div>
+            <div className="flex flex-wrap gap-2 p-4">
+              {entry.workers.map((w) => (
+                <span key={w.id} className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm">
+                  {w.name}
+                  {w.role && (
+                    <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                      w.role === 'HEAD_OPERATOR' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {w.role === 'HEAD_OPERATOR' ? 'Head Op' : 'Asst'}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
