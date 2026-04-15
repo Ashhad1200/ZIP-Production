@@ -133,6 +133,21 @@ const navItems: NavItem[] = [
         roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
       },
       {
+        label: 'Journal Entries',
+        path: '/finance/journal-entries',
+        roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+      },
+      {
+        label: 'General Ledger',
+        path: '/finance/general-ledger',
+        roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+      },
+      {
+        label: 'Trial Balance',
+        path: '/finance/trial-balance',
+        roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
+      },
+      {
         label: 'Reports',
         path: '/finance/reports',
         roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],

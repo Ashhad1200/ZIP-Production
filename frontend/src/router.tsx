@@ -41,6 +41,15 @@ const ReportsPage = React.lazy(() => import('./pages/Finance/ReportsPage'));
 const ProfitLossPage = React.lazy(() =>
   import('./pages/Finance/Reports/ProfitLossReport').then((m) => ({ default: m.ProfitLossReport })),
 );
+const JournalEntriesPage = React.lazy(() =>
+  import('./pages/Finance/Accounting/JournalEntriesPage').then((m) => ({ default: m.JournalEntriesPage })),
+);
+const GeneralLedgerPage = React.lazy(() =>
+  import('./pages/Finance/Accounting/GeneralLedgerPage').then((m) => ({ default: m.GeneralLedgerPage })),
+);
+const TrialBalancePage = React.lazy(() =>
+  import('./pages/Finance/Accounting/TrialBalancePage').then((m) => ({ default: m.TrialBalancePage })),
+);
 const SettingsPage = React.lazy(
   () => import('./pages/Settings/SettingsPage'),
 );
@@ -222,6 +231,9 @@ export const routes: RouteObject[] = [
           { path: 'vouchers/*', element: <Lazy element={VouchersPage} /> },
           { path: 'reports', element: <Lazy element={ReportsPage} /> },
           { path: 'profit-loss', element: <Lazy element={ProfitLossPage} /> },
+          { path: 'journal-entries', element: <Lazy element={JournalEntriesPage} /> },
+          { path: 'general-ledger', element: <Lazy element={GeneralLedgerPage} /> },
+          { path: 'trial-balance', element: <Lazy element={TrialBalancePage} /> },
         ],
       },
       {

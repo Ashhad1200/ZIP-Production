@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, FileText, BarChart3, TrendingUp } from 'lucide-react';
+import { Users, FileText, BarChart3, TrendingUp, BookOpen, Scale, List } from 'lucide-react';
 
 export default function FinancePage() {
   const navigate = useNavigate();
@@ -18,6 +18,27 @@ export default function FinancePage() {
       icon: FileText,
       path: '/finance/vouchers',
       color: 'bg-green-50 text-green-600',
+    },
+    {
+      title: 'Journal Entries',
+      description: 'View all posted journal entries and their line details',
+      icon: List,
+      path: '/finance/journal-entries',
+      color: 'bg-amber-50 text-amber-600',
+    },
+    {
+      title: 'General Ledger',
+      description: 'Account-wise transactions with running balance',
+      icon: BookOpen,
+      path: '/finance/general-ledger',
+      color: 'bg-cyan-50 text-cyan-600',
+    },
+    {
+      title: 'Trial Balance',
+      description: 'Verify debits equal credits across all accounts',
+      icon: Scale,
+      path: '/finance/trial-balance',
+      color: 'bg-indigo-50 text-indigo-600',
     },
     {
       title: 'Monthly Reports',

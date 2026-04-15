@@ -13,6 +13,7 @@ import salesReturnRoutes from './sales-return.routes';
 import monthlyOverheadRoutes from './monthly-overhead.routes';
 import vendorRoutes from './vendor.routes';
 import packagingRoutes from './packaging.routes';
+import accountingRoutes from './accounting.routes';
 import { authenticate } from '../middleware/auth.middleware';
 import { notificationService } from '../services/notification.service';
 import { AuthenticatedRequest } from '../types';
@@ -60,6 +61,9 @@ router.use('/vendors', vendorRoutes);
 
 // Packaging inventory routes
 router.use('/packaging', packagingRoutes);
+
+// Accounting routes (journal entries, GL, trial balance)
+router.use('/accounting', accountingRoutes);
 
 // Notification routes (all protected)
 router.get('/notifications', authenticate, async (req: AuthenticatedRequest, res, next) => {
