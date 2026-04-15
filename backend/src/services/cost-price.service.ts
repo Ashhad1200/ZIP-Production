@@ -42,7 +42,7 @@ export interface ShiftCostBreakdown {
 
   electricityCostPaisa: bigint;
   electricityUnitsConsumed: number;
-  electricityRatePaisaPerUnit: bigint;
+  electricityRatePaisaPerUnit: number;
   electricityCostDisplay: string;
 
   rawMaterialCostPaisa: bigint;
@@ -404,7 +404,7 @@ export class CostPriceService {
 
       electricityCostPaisa,
       electricityUnitsConsumed: electricityUnits,
-      electricityRatePaisaPerUnit: electricityRatePaisaPerUnit,
+      electricityRatePaisaPerUnit: Number(electricityRatePaisaPerUnit),
       electricityCostDisplay: formatPaisaToRupees(electricityCostPaisa),
 
       rawMaterialCostPaisa,

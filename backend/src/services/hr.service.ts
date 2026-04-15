@@ -30,7 +30,7 @@ async function ensureSalaryAccount(userId: string): Promise<string> {
 
 async function getCashAccountId(): Promise<string> {
   const account = await prisma.account.findUnique({ where: { code: '1100' } });
-  if (!account) throw Object.assign(new Error('Cash account (1100) not found'), { statusCode: 500 });
+  if (!account) throw Object.assign(new Error('Cash account (1100) not found'), { statusCode: 500, code: 'ACCOUNT_NOT_FOUND' });
   return account.id;
 }
 

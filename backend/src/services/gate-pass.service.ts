@@ -306,7 +306,8 @@ export class GatePassService {
             where: { orderId: input.orderId },
           });
           const totalDelivered = updatedLineItems.reduce((sum, li) => sum + li.metersDelivered, 0);
-          const newStatus = totalDelivered >= order.metersOrdered ? 'COMPLETED' : order.status;
+          const isFullyDelivered = updatedLineItems.every(li => li.metersDelivered >= li.metersOrdered);
+          const newStatus = isFullyDelivered ? 'COMPLETED' : order.status;
 
           await tx.order.update({
             where: { id: input.orderId },

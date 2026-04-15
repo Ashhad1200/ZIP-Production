@@ -26,7 +26,5 @@ router.patch('/vouchers/:id/approve', authenticate, rbac(...adminOnly), financeC
 
 // Reports
 router.get('/reports/monthly', authenticate, rbac(...financeRoles), financeController.getMonthlyReport.bind(financeController));
-
-router.get('/reports/monthly', authenticate, rbac(...financeRoles), financeController.getMonthlyReport.bind(financeController));
 router.get('/reports/profit-loss', authenticate, rbac(...financeRoles), financeController.getProfitLoss.bind(financeController));
 export default router;
