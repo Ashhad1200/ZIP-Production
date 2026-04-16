@@ -55,5 +55,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
-# Run prisma db push to sync schema, then start app
-CMD ["sh", "-c", "npx prisma db push --schema ./prisma/schema.prisma && node dist/app.js"]
+# Sync schema, run idempotent seed, then start app
+CMD ["sh", "-c", "npx prisma db push --schema ./prisma/schema.prisma && node dist/prisma/seed.js && node dist/app.js"]
