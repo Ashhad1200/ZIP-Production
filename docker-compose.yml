@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,7 +6,7 @@ services:
       POSTGRES_USER: zipuser
       POSTGRES_PASSWORD: zippass123
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,15 +21,21 @@ services:
       DATABASE_URL: postgresql://zipuser:zippass123@postgres:5432/zip_production
       NODE_ENV: production
       JWT_SECRET: change-me-in-production
-      PORT: 3001
+      JWT_EXPIRES_IN: "24h"
+      PORT: "3001"
       CORS_ORIGIN: http://localhost
+      VERIFY_TOKEN_EXPIRY_HOURS: "48"
     ports:
-      - "3001:3001"
+      - "3002:3001"
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
     command: >
-      sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/server.js"
+      sh -c "npx prisma db push --schema ./prisma/schema.prisma &&
+             node dist/prisma/seed.js &&
+             node dist/app.js"
 
   frontend:
     build: ./frontend
@@ -44,3 +48,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
