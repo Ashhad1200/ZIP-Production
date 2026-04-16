@@ -3,6 +3,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Accept API URL as build arg (for Coolify: https://api.bdmatrix.org/api/v1)
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 COPY package*.json ./
 RUN npm install --no-audit --no-fund
 COPY . .
@@ -14,8 +18,8 @@ FROM nginx:alpine AS production
 # Remove default config
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Copy nginx config INTO the image (no volume mount needed)
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config INTO the image (static file serving only)
+COPY nginx.coolify.conf /etc/nginx/conf.d/default.conf
 
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
