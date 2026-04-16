@@ -48,6 +48,7 @@ router.put('/grain-types/:id', authenticate, rbac(...adminOnly), settingsControl
 
 // Plants & machines
 router.get('/plants', authenticate, rbac(...adminOnly), settingsController.listPlants.bind(settingsController));
+router.post('/plants', authenticate, rbac(...adminOnly), settingsController.createPlant.bind(settingsController));
 router.put('/plants/:id', authenticate, rbac(...adminOnly), settingsController.updatePlant.bind(settingsController));
 router.post('/plants/:plantId/machines', authenticate, rbac(...adminOnly), settingsController.createMachine.bind(settingsController));
 router.put('/plants/:plantId/machines/:machineId', authenticate, rbac(...adminOnly), settingsController.updateMachine.bind(settingsController));

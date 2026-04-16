@@ -528,6 +528,29 @@ export class SettingsController {
     }
   }
 
+  async createPlant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { name, location } = req.body;
+      if (!name?.trim()) {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: 'Plant name is required' },
+        });
+        return;
+      }
+      const plant = await prisma.plant.create({
+        data: {
+          name: name.trim(),
+          ...(location?.trim() && { location: location.trim() }),
+          createdBy: req.user!.userId,
+        },
+        include: { machines: { where: { isActive: true } } },
+      });
+      res.status(201).json({ data: plant });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async updatePlant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;

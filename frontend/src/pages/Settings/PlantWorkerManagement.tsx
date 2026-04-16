@@ -112,6 +112,100 @@ function PlantFormModal({ plant, onClose, onSuccess }: PlantFormProps) {
   );
 }
 
+// ─── Plant Create Modal ─────────────────────────────────────────────────────
+
+function CreatePlantModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const validate = useCallback((): boolean => {
+    const errs: Record<string, string> = {};
+    if (!name.trim()) errs.name = 'Plant name is required';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }, [name]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      settingsApi.createPlant({
+        name: name.trim(),
+        location: location.trim() || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings-plants'] });
+      setToast({ type: 'success', message: 'Plant created!' });
+      setTimeout(onSuccess, 600);
+    },
+    onError: (err: Error) => {
+      setToast({ type: 'error', message: err.message || 'Failed to create' });
+    },
+  });
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    mutation.mutate();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Add Plant" size="sm">
+      {toast && (
+        <div
+          className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${toast.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}
+        >
+          {toast.message}
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Plant Name *</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.name ? 'border-red-400' : 'border-gray-300'}`}
+            placeholder="e.g. Main Factory"
+          />
+          {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Location</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            placeholder="Optional"
+          />
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={mutation.isPending}
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {mutation.isPending ? (
+              <><Loader2 size={16} className="animate-spin" />Creating…</>
+            ) : (
+              'Create Plant'
+            )}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ─── Machine Form Modal ─────────────────────────────────────────────────────
 
 interface MachineFormProps {
@@ -543,6 +637,7 @@ export function PlantWorkerManagement() {
   // Plants state
   const [expandedPlant, setExpandedPlant] = useState<string | null>(null);
   const [editPlant, setEditPlant] = useState<Plant | null>(null);
+  const [showCreatePlant, setShowCreatePlant] = useState(false);
   const [machineForm, setMachineForm] = useState<{
     plantId: string;
     machine?: Machine;
@@ -669,7 +764,16 @@ export function PlantWorkerManagement() {
 
       {/* Plants Section */}
       <div className="mb-6">
-        <h2 className="mb-3 text-base font-semibold text-gray-900">Plants</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Plants</h2>
+          <button
+            onClick={() => setShowCreatePlant(true)}
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus size={16} />
+            Add Plant
+          </button>
+        </div>
         <div className="space-y-3">
           {plants.length === 0 ? (
             <div className="rounded-lg border bg-white px-4 py-8 text-center text-sm text-gray-400">
@@ -722,6 +826,13 @@ export function PlantWorkerManagement() {
       </div>
 
       {/* Modals */}
+      {showCreatePlant && (
+        <CreatePlantModal
+          onClose={() => setShowCreatePlant(false)}
+          onSuccess={() => setShowCreatePlant(false)}
+        />
+      )}
+
       {editPlant && (
         <PlantFormModal
           plant={editPlant}

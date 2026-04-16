@@ -264,6 +264,8 @@ export const settingsApi = {
   // Plants & Machines
   getPlants: () =>
     api.get<{ data: Plant[] }>('/settings/plants').then((r) => r.data),
+  createPlant: (data: { name: string; location?: string }) =>
+    api.post<{ data: Plant }>('/settings/plants', data).then((r) => r.data),
   updatePlant: (id: string, data: { name?: string; location?: string }) =>
     api.put<{ data: Plant }>(`/settings/plants/${id}`, data).then((r) => r.data),
   createMachine: (
