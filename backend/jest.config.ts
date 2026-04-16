@@ -14,6 +14,7 @@ const config: Config = {
       tsconfig: 'tsconfig.test.json',
     }],
   },
+  
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
