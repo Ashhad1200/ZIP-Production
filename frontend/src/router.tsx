@@ -63,6 +63,26 @@ const MonthlyOverheadPage = React.lazy(() =>
 );
 const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
 
+// Backoffice (BD Matrix platform admin — separate auth plane, see PlatformAuthContext)
+const BackofficeLoginPage = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.BackofficeLoginPage })),
+);
+const BackofficeLayout = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.BackofficeLayout })),
+);
+const BackofficeDashboardPage = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.BackofficeDashboardPage })),
+);
+const BackofficeOrganizationsPage = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.OrganizationsPage })),
+);
+const BackofficePlansPage = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.PlansPage })),
+);
+const BackofficePaymentsPage = React.lazy(() =>
+  import('./pages/Backoffice').then((m) => ({ default: m.PaymentsPage })),
+);
+
 // --------------- Guards ---------------
 
 function RoleGuard({
@@ -131,6 +151,22 @@ export const routes: RouteObject[] = [
   {
     path: '/gp-verify',
     element: <Lazy element={VerifyGatePassPage} />,
+  },
+
+  // Backoffice (BD Matrix platform admin — independent auth plane from the tenant app above)
+  {
+    path: '/backoffice/login',
+    element: <Lazy element={BackofficeLoginPage} />,
+  },
+  {
+    path: '/backoffice',
+    element: <Lazy element={BackofficeLayout} />,
+    children: [
+      { index: true, element: <Lazy element={BackofficeDashboardPage} /> },
+      { path: 'organizations', element: <Lazy element={BackofficeOrganizationsPage} /> },
+      { path: 'plans', element: <Lazy element={BackofficePlansPage} /> },
+      { path: 'payments', element: <Lazy element={BackofficePaymentsPage} /> },
+    ],
   },
 
   // Protected routes

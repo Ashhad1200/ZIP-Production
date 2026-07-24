@@ -93,23 +93,52 @@ enum AuditAction {
   SOFT_DELETE
 }
 
+// ─── Platform / SaaS billing enums ─────────────────────────────────────────
+
+enum OrganizationStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+}
+
+enum PaymentVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 // ─── 1. User ────────────────────────────────────────────────────────────────
 
 model User {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  role        Role
-  isActive    Boolean   @default(true)
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  name           String    @unique
+  role           Role
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  // Nullable during Phase 1: existing single-tenant rows have no organization.
+  // Phase 2 backfills this to a default Organization and makes it required.
+  organizationId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
+  organization  Organization? @relation(fields: [organizationId], references: [id])
   notifications Notification[]
   auditLogs     AuditLog[]
 
   // reverse relation for Voucher.approvedBy
   approvedVouchers Voucher[] @relation("VoucherApprover")
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -994,6 +1023,9 @@ model Company {
   name         String  @unique
   taxStructure String?
   isActive     Boolean @default(true)
+  // Nullable during Phase 1. Once set, this Company counts against its
+  // Organization's Plan.maxSubCompanies limit — see platform.service.ts.
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -1005,9 +1037,11 @@ model Company {
   deletedBy String?
   version   Int       @default(1)
 
-  vouchers Voucher[]
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  vouchers     Voucher[]
 
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("companies")
 }
 
@@ -1191,4 +1225,177 @@ model PackagingStockAdjustment {
   @@index([materialId])
   @@index([referenceType, referenceId])
   @@map("packaging_stock_adjustments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Platform plane — multi-tenant SaaS billing & backoffice (Phase 1)
+//
+// These models are additive and are NOT yet consumed by the tenant-facing
+// modules above (Production, Inventory, Gate Pass, etc.) — see
+// docs/SAAS-PLATFORM-BLUEPRINT.md Phase 2 for the plan to scope every
+// tenant model by organizationId. This layer only powers the new
+// /api/v1/platform/* backoffice + signup/billing endpoints.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Organization (tenant / paying customer) ───────────────────────────────
+
+model Organization {
+  id           String             @id @default(uuid())
+  name         String
+  slug         String             @unique
+  contactName  String
+  contactEmail String             @unique
+  contactPhone String?
+  industry     String?
+  status       OrganizationStatus @default(TRIAL)
+  trialEndsAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  companies     Company[]
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@index([status])
+  @@map("organizations")
+}
+
+// ─── Module (sellable feature bundle unit) ─────────────────────────────────
+
+model Module {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  planModules PlanModule[]
+
+  @@map("modules")
+}
+
+// ─── Plan (price + modules + sub-company limit) ────────────────────────────
+
+model Plan {
+  id               String  @id @default(uuid())
+  name             String  @unique
+  code             String  @unique
+  pricePaisa       BigInt
+  billingCycleDays Int     @default(30)
+  trialDays        Int     @default(3)
+  maxSubCompanies  Int     @default(1)
+  maxUsers         Int?
+  isActive         Boolean @default(true)
+  sortOrder        Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  planModules   PlanModule[]
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@map("plans")
+}
+
+model PlanModule {
+  planId   String
+  moduleId String
+
+  plan   Plan   @relation(fields: [planId], references: [id])
+  module Module @relation(fields: [moduleId], references: [id])
+
+  @@id([planId, moduleId])
+  @@index([moduleId])
+  @@map("plan_modules")
+}
+
+// ─── Subscription (an Organization's relationship to a Plan over time) ─────
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  organizationId     String
+  planId             String
+  status             SubscriptionStatus @default(TRIAL)
+  trialEndsAt        DateTime
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  nextDueDate        DateTime?
+  canceledAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+  payments     Payment[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([nextDueDate])
+  @@map("subscriptions")
+}
+
+// ─── BankAccount (our bank details shown to tenants for manual transfer) ──
+
+model BankAccount {
+  id            String  @id @default(uuid())
+  bankName      String
+  accountTitle  String
+  accountNumber String
+  iban          String?
+  branchCode    String?
+  isActive      Boolean @default(true)
+  sortOrder     Int     @default(0)
+
+  payments Payment[]
+
+  @@map("bank_accounts")
+}
+
+// ─── Payment (manual bank-transfer proof, verified by a PlatformAdmin) ────
+
+model Payment {
+  id                 String                    @id @default(uuid())
+  organizationId     String
+  subscriptionId     String?
+  planId             String
+  bankAccountId      String?
+  amountClaimedPaisa BigInt
+  periodStart        DateTime?
+  periodEnd          DateTime?
+  screenshotUrl      String
+  transactionRef     String?
+  status             PaymentVerificationStatus @default(PENDING)
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  rejectionReason    String?
+  submittedAt        DateTime                  @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  plan         Plan          @relation(fields: [planId], references: [id])
+  bankAccount  BankAccount?  @relation(fields: [bankAccountId], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([submittedAt])
+  @@map("payments")
+}
+
+// ─── PlatformAdmin (BD Matrix backoffice login — separate from tenant Users) ─
+
+model PlatformAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  @@map("platform_admins")
 }

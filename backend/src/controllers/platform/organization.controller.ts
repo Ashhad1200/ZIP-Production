@@ -1,0 +1,70 @@
+import { Request, Response, NextFunction } from 'express';
+import { organizationService } from '../../services/platform/organization.service';
+
+export class OrganizationController {
+  /** Public — self-serve signup from the marketing site. */
+  async signup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationName, contactName, contactEmail, contactPhone, industry, adminUserName, planCode } = req.body;
+
+      if (!organizationName || !contactName || !contactEmail || !adminUserName || !planCode) {
+        res.status(422).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'organizationName, contactName, contactEmail, adminUserName and planCode are required',
+          },
+        });
+        return;
+      }
+
+      const result = await organizationService.signup({
+        organizationName,
+        contactName,
+        contactEmail,
+        contactPhone,
+        industry,
+        adminUserName,
+        planCode,
+      });
+
+      res.status(201).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Backoffice — list all registered organizations. */
+  async list(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizations = await organizationService.list();
+      res.json({ data: organizations });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organization = await organizationService.getById(req.params.id as string);
+      res.json({ data: organization });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async setStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { status } = req.body;
+      if (!['ACTIVE', 'SUSPENDED', 'CANCELED'].includes(status)) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid status' } });
+        return;
+      }
+      const organization = await organizationService.setStatus(req.params.id as string, status);
+      res.json({ data: organization });
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+export const organizationController = new OrganizationController();

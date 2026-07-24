@@ -14,6 +14,7 @@ import monthlyOverheadRoutes from './monthly-overhead.routes';
 import vendorRoutes from './vendor.routes';
 import packagingRoutes from './packaging.routes';
 import accountingRoutes from './accounting.routes';
+import platformRoutes from './platform';
 import { authenticate } from '../middleware/auth.middleware';
 import { notificationService } from '../services/notification.service';
 import { AuthenticatedRequest } from '../types';
@@ -64,6 +65,9 @@ router.use('/packaging', packagingRoutes);
 
 // Accounting routes (journal entries, GL, trial balance)
 router.use('/accounting', accountingRoutes);
+
+// Platform routes (BD Matrix backoffice: organizations, plans, billing — see docs/SAAS-PLATFORM-BLUEPRINT.md)
+router.use('/platform', platformRoutes);
 
 // Notification routes (all protected)
 router.get('/notifications', authenticate, async (req: AuthenticatedRequest, res, next) => {

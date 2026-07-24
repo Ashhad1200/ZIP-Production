@@ -82,3 +82,22 @@ export interface JwtPayload {
   iat?: number;
   exp?: number;
 }
+
+// ─── Platform plane (backoffice) ───────────────────────────────────────────
+
+// JWT payload for a PlatformAdmin session — deliberately separate shape/audience
+// from JwtPayload so a tenant token can never be mistaken for a platform token.
+export interface PlatformJwtPayload {
+  aud: 'platform';
+  adminId: string;
+  email: string;
+  iat?: number;
+  exp?: number;
+}
+
+export interface PlatformAuthenticatedRequest extends Request {
+  platformAdmin?: {
+    adminId: string;
+    email: string;
+  };
+}

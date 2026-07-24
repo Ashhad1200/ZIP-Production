@@ -2,6 +2,16 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { randomBytes, scryptSync } from 'crypto';
+
+// Duplicated from src/utils/password.ts on purpose — the Dockerfile compiles
+// this file in isolation (`tsc prisma/seed.ts --outDir dist/prisma`), so it
+// must not import from src/ or the output path/module graph can shift.
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -393,6 +403,78 @@ async function main() {
     });
   }
 
+  // ─── Platform plane (multi-tenant SaaS billing/backoffice) ────────────────
+  // Duplicated list — keep in sync with backend/src/config/modules.ts.
+  console.log('🏢 Seeding platform modules, starter plan, bank account, platform admin...');
+  const moduleDefs = [
+    { key: 'dashboard', name: 'Dashboard', description: 'Cross-module KPI dashboard', sortOrder: 0 },
+    { key: 'production', name: 'Production', description: 'Shift-based production logging, recipes, raw material consumption', sortOrder: 10 },
+    { key: 'inventory', name: 'Inventory', description: 'Raw material and finished goods stock tracking', sortOrder: 20 },
+    { key: 'packaging', name: 'Packaging', description: 'Packaging material inventory', sortOrder: 25 },
+    { key: 'gate-pass', name: 'Gate Pass', description: 'Dispatch, QR-verified receipt, sales returns', sortOrder: 30 },
+    { key: 'orders', name: 'Orders', description: 'Client order tracking and fulfillment', sortOrder: 40 },
+    { key: 'finance', name: 'Finance', description: 'Client ledger, payments, vouchers, reports', sortOrder: 50 },
+    { key: 'accounting', name: 'Accounting', description: 'Chart of accounts, journal entries, general ledger, trial balance', sortOrder: 55 },
+    { key: 'hr', name: 'HR & Payroll', description: 'Workers, salary rates, advances, payroll', sortOrder: 60 },
+    { key: 'cost-price', name: 'Cost Price Reports', description: 'Per-variant cost price and margin analysis', sortOrder: 65 },
+    { key: 'monthly-overheads', name: 'Monthly Overheads', description: 'Overhead allocation for cost pricing', sortOrder: 66 },
+    { key: 'settings', name: 'Settings', description: 'Plants, machines, variants, clients, users, system configuration', sortOrder: 90 },
+  ];
+  for (const m of moduleDefs) {
+    await prisma.module.upsert({ where: { key: m.key }, update: { name: m.name, description: m.description, sortOrder: m.sortOrder }, create: m });
+  }
+  const allModules = await prisma.module.findMany();
+
+  const starterPlan = await prisma.plan.upsert({
+    where: { code: 'standard' },
+    update: {},
+    create: {
+      name: 'Standard',
+      code: 'standard',
+      pricePaisa: 1500000n, // PKR 15,000 / month
+      billingCycleDays: 30,
+      trialDays: 3,
+      maxSubCompanies: 1,
+      sortOrder: 0,
+    },
+  });
+  const existingPlanModules = await prisma.planModule.count({ where: { planId: starterPlan.id } });
+  if (existingPlanModules === 0) {
+    await prisma.planModule.createMany({
+      data: allModules.map((m) => ({ planId: starterPlan.id, moduleId: m.id })),
+    });
+  }
+
+  const existingBankAccount = await prisma.bankAccount.findFirst();
+  if (!existingBankAccount) {
+    await prisma.bankAccount.create({
+      data: {
+        bankName: 'PLACEHOLDER BANK — update in backoffice',
+        accountTitle: 'BD Matrix (Pvt) Ltd',
+        accountNumber: '0000000000000',
+        sortOrder: 0,
+      },
+    });
+  }
+
+  // Platform admin credentials come from env so no real password ships in
+  // source control; falls back to a dev-only default (logged loudly) if unset.
+  const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL || 'admin@bdmatrix.org';
+  const existingPlatformAdmin = await prisma.platformAdmin.findUnique({ where: { email: platformAdminEmail } });
+  if (!existingPlatformAdmin) {
+    const platformAdminPassword = process.env.PLATFORM_ADMIN_PASSWORD || 'change-me-in-production';
+    if (!process.env.PLATFORM_ADMIN_PASSWORD) {
+      console.warn('   ⚠️  PLATFORM_ADMIN_PASSWORD not set — seeded backoffice admin with a default dev password. Change it immediately.');
+    }
+    await prisma.platformAdmin.create({
+      data: {
+        name: 'Platform Owner',
+        email: platformAdminEmail,
+        passwordHash: hashPassword(platformAdminPassword),
+      },
+    });
+  }
+
   // ─── Summary ────────────────────────────────────────────────────────────
   console.log('');
   console.log('📊 Seed Summary:');
@@ -406,6 +488,9 @@ async function main() {
   console.log(`   Zipper Variants:     ${variantData.length}`);
   console.log(`   Electricity Rate:    50 Rs/kWhr (5,000 paisa/unit)`);
   console.log(`   Monthly Overheads:   ${overheadMonths.length} months`);
+  console.log(`   Platform Modules:    ${moduleDefs.length}`);
+  console.log(`   Platform Plan:       Standard (PKR 15,000/mo, all modules)`);
+  console.log(`   Platform Admin:      ${platformAdminEmail}`);
   console.log('');
   console.log('✅ Seed complete!');
 }
