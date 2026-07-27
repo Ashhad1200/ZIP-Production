@@ -19,7 +19,7 @@ const PERIOD_OPTIONS = [
 export function ConsumptionReport() {
   // ── Filter state ─────────────────────────────────────────────────────────
   const [period, setPeriod] = useState('current_month');
-  const [grainTypeFilter, setGrainTypeFilter] = useState('');
+  const [rawMaterialTypeFilter, setRawMaterialTypeFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -28,22 +28,22 @@ export function ConsumptionReport() {
     queryKey: ['raw-material-stock'],
     queryFn: inventoryApi.getRawMaterials,
   });
-  const grainTypes = rawMaterialsResp?.data ?? [];
+  const rawMaterialTypes = rawMaterialsResp?.data ?? [];
 
   // ── Consumption report ───────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
-    queryKey: ['consumption-report', period, grainTypeFilter, dateFrom, dateTo],
+    queryKey: ['consumption-report', period, rawMaterialTypeFilter, dateFrom, dateTo],
     queryFn: () =>
       inventoryApi.getConsumptionReport({
         period: period !== 'custom' ? period : undefined,
-        grainTypeId: grainTypeFilter || undefined,
+        rawMaterialTypeId: rawMaterialTypeFilter || undefined,
         dateFrom: period === 'custom' && dateFrom ? dateFrom : undefined,
         dateTo: period === 'custom' && dateTo ? dateTo : undefined,
       }),
   });
 
   const report = data?.data;
-  const grainData = report?.grainTypes ?? [];
+  const grainData = report?.rawMaterialTypes ?? [];
 
   // ── Totals ───────────────────────────────────────────────────────────────
   const totals = grainData.reduce(
@@ -65,10 +65,10 @@ export function ConsumptionReport() {
   // ── Table columns ────────────────────────────────────────────────────────
   const columns: Column<ConsumptionGrainData>[] = [
     {
-      key: 'grainType',
-      header: 'Grain Type',
+      key: 'rawMaterialType',
+      header: 'Raw Material Type',
       sortable: true,
-      render: (row) => row.grainType,
+      render: (row) => row.rawMaterialType,
     },
     {
       key: 'purchasedBags',
@@ -122,7 +122,7 @@ export function ConsumptionReport() {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-900">
-          {row.grainType}
+          {row.rawMaterialType}
         </span>
         <span
           className={`text-sm font-medium ${
@@ -179,15 +179,15 @@ export function ConsumptionReport() {
         />
         <SearchableSelect
           options={[
-            { value: '', label: 'All Grain Types' },
-            ...grainTypes.map((g) => ({
-              value: g.grainType.id,
-              label: g.grainType.name,
+            { value: '', label: 'All Raw Material Types' },
+            ...rawMaterialTypes.map((g) => ({
+              value: g.rawMaterialType.id,
+              label: g.rawMaterialType.name,
             })),
           ]}
-          value={grainTypeFilter}
-          onChange={setGrainTypeFilter}
-          placeholder="All Grain Types"
+          value={rawMaterialTypeFilter}
+          onChange={setRawMaterialTypeFilter}
+          placeholder="All Raw Material Types"
           clearable
         />
         {period === 'custom' && (
@@ -212,7 +212,7 @@ export function ConsumptionReport() {
           columns={columns}
           data={grainData}
           isLoading={isLoading}
-          keyExtractor={(row) => row.grainType}
+          keyExtractor={(row) => row.rawMaterialType}
           mobileCard={mobileCard}
           emptyMessage="No consumption data for selected period"
         />

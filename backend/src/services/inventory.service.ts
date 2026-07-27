@@ -1,4 +1,4 @@
-import prisma from '../config/database';
+import prisma, { TenantTransactionClient } from '../config/database';
 import { AuditAction, NotificationType, Prisma, PurchaseSource, Role } from '@prisma/client';
 import { formatPaisaToRupees } from '../utils/currency';
 import { accountingService } from './accounting.service';
@@ -28,14 +28,14 @@ export class InventoryService {
    * Returns breakdown of which batches were consumed and at what cost.
    */
   async deductFifoBatches(
-    grainTypeId: string,
+    rawMaterialTypeId: string,
     bagsNeeded: number,
     userId: string,
-    tx: Prisma.TransactionClient
+    tx: TenantTransactionClient
   ): Promise<FifoDeductionResult> {
     // Fetch non-exhausted batches ordered by purchase date (oldest first = FIFO)
     const batches = await tx.rawMaterialBatch.findMany({
-      where: { grainTypeId, isExhausted: false },
+      where: { rawMaterialTypeId, isExhausted: false },
       orderBy: [{ purchaseDate: 'asc' }, { createdAt: 'asc' }],
     });
 
@@ -81,25 +81,25 @@ export class InventoryService {
   }
 
   /**
-   * List all FIFO batches for a grain type (for UI display).
+   * List all FIFO batches for a raw material type (for UI display).
    */
-  async listBatches(params: { grainTypeId?: string; includeExhausted?: boolean } = {}) {
-    const { grainTypeId, includeExhausted = false } = params;
+  async listBatches(params: { rawMaterialTypeId?: string; includeExhausted?: boolean } = {}) {
+    const { rawMaterialTypeId, includeExhausted = false } = params;
     const batches = await prisma.rawMaterialBatch.findMany({
       where: {
-        ...(grainTypeId ? { grainTypeId } : {}),
+        ...(rawMaterialTypeId ? { rawMaterialTypeId } : {}),
         ...(!includeExhausted ? { isExhausted: false } : {}),
       },
       include: {
-        grainType: { select: { id: true, code: true, name: true } },
+        rawMaterialType: { select: { id: true, code: true, name: true } },
         purchase: { select: { id: true, purchaseDate: true, source: true } },
       },
-      orderBy: [{ grainTypeId: 'asc' }, { purchaseDate: 'asc' }],
+      orderBy: [{ rawMaterialTypeId: 'asc' }, { purchaseDate: 'asc' }],
     });
 
     return batches.map((b) => ({
       id: b.id,
-      grainType: b.grainType,
+      rawMaterialType: b.rawMaterialType,
       purchaseDate: toISODate(b.purchaseDate),
       source: b.source,
       bagsTotal: Number(b.bagsTotal),
@@ -232,26 +232,26 @@ export class InventoryService {
   }
 
   /**
-   * List raw material stock for all grain types.
+   * List raw material stock for all raw material types.
    */
   async getRawMaterials() {
     const items = await prisma.rawMaterialStock.findMany({
       include: {
-        grainType: { select: { id: true, code: true, name: true, lowStockThresholdBags: true } },
+        rawMaterialType: { select: { id: true, code: true, name: true, lowStockThresholdBags: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     return items.map((item) => {
       const currentBags = Number(item.currentBags);
-      const thresholdBags = item.grainType.lowStockThresholdBags
-        ? Number(item.grainType.lowStockThresholdBags)
+      const thresholdBags = item.rawMaterialType.lowStockThresholdBags
+        ? Number(item.rawMaterialType.lowStockThresholdBags)
         : null;
       const isBelowThreshold = thresholdBags != null && currentBags < thresholdBags;
 
       return {
         id: item.id,
-        grainType: { id: item.grainType.id, code: item.grainType.code, name: item.grainType.name },
+        rawMaterialType: { id: item.rawMaterialType.id, code: item.rawMaterialType.code, name: item.rawMaterialType.name },
         currentBags,
         lowStockThresholdBags: thresholdBags,
         isBelowThreshold,
@@ -267,17 +267,17 @@ export class InventoryService {
   async listPurchases(params: {
     page: number;
     limit: number;
-    grainTypeId?: string;
+    rawMaterialTypeId?: string;
     source?: PurchaseSource;
     dateFrom?: string;
     dateTo?: string;
   }) {
-    const { page, limit, grainTypeId, source, dateFrom, dateTo } = params;
+    const { page, limit, rawMaterialTypeId, source, dateFrom, dateTo } = params;
     const skip = (page - 1) * limit;
 
     const where: Prisma.RawMaterialPurchaseWhereInput = {
       isDeleted: false,
-      ...(grainTypeId ? { grainTypeId } : {}),
+      ...(rawMaterialTypeId ? { rawMaterialTypeId } : {}),
       ...(source ? { source } : {}),
       ...(dateFrom || dateTo
         ? {
@@ -296,7 +296,7 @@ export class InventoryService {
         take: limit,
         orderBy: { purchaseDate: 'desc' },
         include: {
-          grainType: { select: { id: true, code: true, name: true } },
+          rawMaterialType: { select: { id: true, code: true, name: true } },
           vendor: { select: { id: true, name: true } },
         },
       }),
@@ -305,7 +305,7 @@ export class InventoryService {
 
     const data = purchases.map((p) => ({
       id: p.id,
-      grainType: p.grainType,
+      rawMaterialType: p.rawMaterialType,
       vendor: p.vendor,
       numberOfBags: Number(p.numberOfBags),
       ratePerBagPaisa: Number(p.ratePerBagPaisa),
@@ -325,7 +325,7 @@ export class InventoryService {
    */
   async recordPurchase(
     input: {
-      grainTypeId: string;
+      rawMaterialTypeId: string;
       vendorId?: string;
       numberOfBags: number;
       ratePerBagPaisa: number;
@@ -335,12 +335,12 @@ export class InventoryService {
     userId: string
   ) {
     return prisma.$transaction(async (tx) => {
-      // Validate grain type
-      const grainType = await tx.grainType.findUnique({
-        where: { id: input.grainTypeId },
+      // Validate raw material type
+      const rawMaterialType = await tx.rawMaterialType.findUnique({
+        where: { id: input.rawMaterialTypeId },
       });
 
-      if (!grainType) {
+      if (!rawMaterialType) {
         throw Object.assign(new Error('Grain type not found'), {
           statusCode: 404,
           code: 'NOT_FOUND',
@@ -362,7 +362,7 @@ export class InventoryService {
         {
           entryNumber,
           entryDate: purchaseDate,
-          description: `Raw material purchase - ${grainType.name}: ${input.numberOfBags} bags @ ${formatPaisaToRupees(BigInt(input.ratePerBagPaisa))}/bag`,
+          description: `Raw material purchase - ${rawMaterialType.name}: ${input.numberOfBags} bags @ ${formatPaisaToRupees(BigInt(input.ratePerBagPaisa))}/bag`,
           referenceType: 'RawMaterialPurchase',
           lines: [
             {
@@ -389,7 +389,7 @@ export class InventoryService {
       // Create purchase record
       const purchase = await tx.rawMaterialPurchase.create({
         data: {
-          grainTypeId: input.grainTypeId,
+          rawMaterialTypeId: input.rawMaterialTypeId,
           vendorId: input.vendorId || null,
           numberOfBags: new Prisma.Decimal(input.numberOfBags),
           ratePerBagPaisa: BigInt(input.ratePerBagPaisa),
@@ -411,7 +411,7 @@ export class InventoryService {
       // Create FIFO batch for this purchase
       await tx.rawMaterialBatch.create({
         data: {
-          grainTypeId: input.grainTypeId,
+          rawMaterialTypeId: input.rawMaterialTypeId,
           purchaseId: purchase.id,
           bagsTotal: new Prisma.Decimal(input.numberOfBags),
           bagsRemaining: new Prisma.Decimal(input.numberOfBags),
@@ -425,9 +425,9 @@ export class InventoryService {
 
       // Upsert raw material stock
       const stock = await tx.rawMaterialStock.upsert({
-        where: { grainTypeId: input.grainTypeId },
+        where: { rawMaterialTypeId: input.rawMaterialTypeId },
         create: {
-          grainTypeId: input.grainTypeId,
+          rawMaterialTypeId: input.rawMaterialTypeId,
           currentBags: new Prisma.Decimal(input.numberOfBags),
           createdBy: userId,
           updatedBy: userId,
@@ -444,24 +444,24 @@ export class InventoryService {
         entityId: purchase.id,
         action: AuditAction.CREATE,
         newValue: {
-          grainTypeId: input.grainTypeId,
+          rawMaterialTypeId: input.rawMaterialTypeId,
           numberOfBags: input.numberOfBags,
           ratePerBagPaisa: input.ratePerBagPaisa,
           totalAmountPaisa: totalAmountPaisa.toString(),
           source: input.source,
         },
-        changedFields: ['grainTypeId', 'numberOfBags', 'ratePerBagPaisa', 'totalAmountPaisa', 'source'],
+        changedFields: ['rawMaterialTypeId', 'numberOfBags', 'ratePerBagPaisa', 'totalAmountPaisa', 'source'],
         userId,
       });
 
       // Check low stock after purchase
-      await this.checkAndNotifyLowStock('raw_material', input.grainTypeId);
+      await this.checkAndNotifyLowStock('raw_material', input.rawMaterialTypeId);
 
       return {
         id: purchase.id,
         totalAmountPaisa: Number(totalAmountPaisa),
         stockUpdate: {
-          grainTypeId: input.grainTypeId,
+          rawMaterialTypeId: input.rawMaterialTypeId,
           newStockBags: Number(stock.currentBags),
         },
       };
@@ -472,12 +472,12 @@ export class InventoryService {
    * Consumption report: purchased vs consumed raw materials over a period.
    */
   async getConsumptionReport(params: {
-    grainTypeId?: string;
+    rawMaterialTypeId?: string;
     period?: string;
     dateFrom?: string;
     dateTo?: string;
   }) {
-    const { grainTypeId, period = 'current_month', dateFrom, dateTo } = params;
+    const { rawMaterialTypeId, period = 'current_month', dateFrom, dateTo } = params;
 
     // Calculate date range
     const now = new Date();
@@ -520,24 +520,24 @@ export class InventoryService {
       }
     }
 
-    // Fetch grain types
-    const grainTypes = await prisma.grainType.findMany({
+    // Fetch raw material types
+    const rawMaterialTypes = await prisma.rawMaterialType.findMany({
       where: {
         isDeleted: false,
         isActive: true,
-        ...(grainTypeId ? { id: grainTypeId } : {}),
+        ...(rawMaterialTypeId ? { id: rawMaterialTypeId } : {}),
       },
       include: {
         rawMaterialStock: true,
       },
     });
 
-    const grainTypeResults = await Promise.all(
-      grainTypes.map(async (gt) => {
+    const rawMaterialTypeResults = await Promise.all(
+      rawMaterialTypes.map(async (gt) => {
         // Purchased bags in period
         const purchaseAgg = await prisma.rawMaterialPurchase.aggregate({
           where: {
-            grainTypeId: gt.id,
+            rawMaterialTypeId: gt.id,
             isDeleted: false,
             purchaseDate: { gte: startDate, lte: endDate },
           },
@@ -551,12 +551,12 @@ export class InventoryService {
           ? Number(purchaseAgg._sum.totalAmountPaisa)
           : 0;
 
-        // Consumed bags: sum from production entries for variants of this grain type
+        // Consumed bags: sum from production entries for variants of this raw material type
         const productionEntries = await prisma.productionEntry.findMany({
           where: {
             isDeleted: false,
             date: { gte: startDate, lte: endDate },
-            variant: { grainTypeId: gt.id },
+            variant: { rawMaterialTypeId: gt.id },
           },
           select: {
             metersProduced: true,
@@ -582,7 +582,7 @@ export class InventoryService {
             : 0;
 
         return {
-          grainType: gt.name,
+          rawMaterialType: gt.name,
           purchasedBags: Math.round(purchasedBags * 10000) / 10000,
           consumedBags: Math.round(consumedBags * 10000) / 10000,
           netChange: Math.round(netChange * 10000) / 10000,
@@ -597,7 +597,7 @@ export class InventoryService {
 
     return {
       period: periodLabel,
-      grainTypes: grainTypeResults,
+      rawMaterialTypes: rawMaterialTypeResults,
     };
   }
 
@@ -636,10 +636,10 @@ export class InventoryService {
   }
 
   /**
-   * Update the low-stock threshold for a raw material (grain type).
+   * Update the low-stock threshold for a raw material (raw material type).
    */
   async updateRawMaterialThreshold(id: string, thresholdBags: number, userId: string) {
-    const existing = await prisma.grainType.findUnique({ where: { id } });
+    const existing = await prisma.rawMaterialType.findUnique({ where: { id } });
 
     if (!existing) {
       throw Object.assign(new Error('Grain type not found'), {
@@ -648,7 +648,7 @@ export class InventoryService {
       });
     }
 
-    const updated = await prisma.grainType.update({
+    const updated = await prisma.rawMaterialType.update({
       where: { id },
       data: {
         lowStockThresholdBags: new Prisma.Decimal(thresholdBags),
@@ -678,21 +678,21 @@ export class InventoryService {
   async checkAndNotifyLowStock(type: 'raw_material' | 'finished_goods' | 'packaging', entityId: string) {
     if (type === 'raw_material') {
       const stock = await prisma.rawMaterialStock.findUnique({
-        where: { grainTypeId: entityId },
-        include: { grainType: true },
+        where: { rawMaterialTypeId: entityId },
+        include: { rawMaterialType: true },
       });
 
-      if (!stock || !stock.grainType.lowStockThresholdBags) return;
+      if (!stock || !stock.rawMaterialType.lowStockThresholdBags) return;
 
       const currentBags = Number(stock.currentBags);
-      const threshold = Number(stock.grainType.lowStockThresholdBags);
+      const threshold = Number(stock.rawMaterialType.lowStockThresholdBags);
 
       if (currentBags < threshold) {
         await notificationService.notifyRole({
           recipientRole: Role.SUPER_ADMIN,
           type: NotificationType.LOW_STOCK,
           title: 'Low Raw Material Stock',
-          message: `${stock.grainType.name} stock is low: ${currentBags.toFixed(2)} bags remaining (threshold: ${threshold} bags).`,
+          message: `${stock.rawMaterialType.name} stock is low: ${currentBags.toFixed(2)} bags remaining (threshold: ${threshold} bags).`,
           referenceType: 'RawMaterialStock',
           referenceId: stock.id,
         });

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { LoadingSpinner } from '../../components/ui';
@@ -8,23 +8,25 @@ import type { User } from '../../types';
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const org = searchParams.get('org') ?? undefined;
 
   const { data: users, isLoading } = useQuery<User[]>({
-    queryKey: ['auth', 'users'],
+    queryKey: ['auth', 'users', org],
     queryFn: async () => {
-      const res = await api.get<{ data: User[] }>('/auth/users');
+      const res = await api.get<{ data: User[] }>('/auth/users', { params: org ? { org } : undefined });
       return res.data.data;
     },
   });
 
   const handleLogin = async (userId: string) => {
     await login(userId);
-    navigate('/', { replace: true });
+    navigate('/dashboard', { replace: true });
   };
 
   // Redirect if already authenticated
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (isLoading) return <LoadingSpinner size="lg" />;

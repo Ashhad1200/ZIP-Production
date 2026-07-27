@@ -1,7 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { organizationService } from '../../services/platform/organization.service';
+import { AuthenticatedRequest } from '../../types';
 
 export class OrganizationController {
+  /** Tenant-authenticated — current user's org subscription status (for the billing screen). */
+  async getMySubscription(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const subscription = await organizationService.getMySubscription(req.user!.userId);
+      res.json({ data: subscription });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** Public — self-serve signup from the marketing site. */
   async signup(req: Request, res: Response, next: NextFunction) {
     try {

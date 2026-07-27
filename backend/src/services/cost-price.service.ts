@@ -14,8 +14,8 @@ import { inventoryService } from './inventory.service';
 import { monthlyOverheadService } from './monthly-overhead.service';
 
 export interface IngredientCostBreakdown {
-  grainTypeName: string;
-  grainTypeCode: string;
+  rawMaterialTypeName: string;
+  rawMaterialTypeCode: string;
   standardRatioPercent: number; // what the recipe says
   actualBagsConsumed: number;
   actualCostPaisa: number;
@@ -23,7 +23,7 @@ export interface IngredientCostBreakdown {
 }
 
 export interface RecipeInfo {
-  ingredients: { grainTypeName: string; grainTypeCode: string; ratioPercent: number }[];
+  ingredients: { rawMaterialTypeName: string; rawMaterialTypeCode: string; ratioPercent: number }[];
 }
 
 export interface ShiftCostBreakdown {
@@ -116,12 +116,12 @@ export class CostPriceService {
                 id: true,
                 code: true,
                 name: true,
-                grainTypeId: true,
+                rawMaterialTypeId: true,
                 packagingMaterialId: true,
-                standardGramsPerMeter: true,
-                grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
+                standardConsumptionRatio: true,
+                rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
                 ingredients: {
-                  include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+                  include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
                 },
               },
             },
@@ -133,7 +133,7 @@ export class CostPriceService {
           },
         },
         batchConsumptions: {
-          include: { batch: { include: { grainType: { select: { id: true, code: true, name: true } } } } },
+          include: { batch: { include: { rawMaterialType: { select: { id: true, code: true, name: true } } } } },
         },
       },
     });
@@ -144,7 +144,7 @@ export class CostPriceService {
     type BatchConsumption = {
       totalCostPaisa: bigint;
       bagsConsumed: { toNumber: () => number } | number | string;
-      batch: { grainTypeId: string; grainType: { id: string; code: string; name: string } };
+      batch: { rawMaterialTypeId: string; rawMaterialType: { id: string; code: string; name: string } };
     };
     const batchConsumptions = (entry.batchConsumptions as unknown as BatchConsumption[]) ?? [];
 
@@ -154,22 +154,22 @@ export class CostPriceService {
     const primarySV = entry.shiftVariants[0];
     type VariantWithIngredients = typeof primarySV extends undefined ? never : typeof primarySV & {
       variant: typeof primarySV.variant & {
-        ingredients?: { grainTypeId: string; ratioPercent: number | { toNumber?: () => number }; grainType: { id: string; code: string; name: string; bagWeightGrams: number } }[];
+        ingredients?: { rawMaterialTypeId: string; ratioPercent: number | { toNumber?: () => number }; rawMaterialType: { id: string; code: string; name: string; bagWeightGrams: number } }[];
       };
     };
     const variantData = primarySV as unknown as VariantWithIngredients | undefined;
-    const variantIngredients = (variantData?.variant as { ingredients?: { grainTypeId: string; ratioPercent: number | { toNumber?: () => number }; grainType: { id: string; code: string; name: string; bagWeightGrams: number } }[] })?.ingredients ?? [];
+    const variantIngredients = (variantData?.variant as { ingredients?: { rawMaterialTypeId: string; ratioPercent: number | { toNumber?: () => number }; rawMaterialType: { id: string; code: string; name: string; bagWeightGrams: number } }[] })?.ingredients ?? [];
 
     const recipe: RecipeInfo | null = variantIngredients.length > 0
       ? {
           ingredients: variantIngredients.map((i) => ({
-            grainTypeName: i.grainType.name,
-            grainTypeCode: i.grainType.code,
+            rawMaterialTypeName: i.rawMaterialType.name,
+            rawMaterialTypeCode: i.rawMaterialType.code,
             ratioPercent: typeof i.ratioPercent === 'number' ? i.ratioPercent : Number(i.ratioPercent),
           })),
         }
-      : primarySV?.variant.grainType
-        ? { ingredients: [{ grainTypeName: primarySV.variant.grainType.name, grainTypeCode: primarySV.variant.grainType.code, ratioPercent: 100 }] }
+      : primarySV?.variant.rawMaterialType
+        ? { ingredients: [{ rawMaterialTypeName: primarySV.variant.rawMaterialType.name, rawMaterialTypeCode: primarySV.variant.rawMaterialType.code, ratioPercent: 100 }] }
         : null;
 
     // ─── Electricity cost ─────────────────────────────────────────────────
@@ -188,7 +188,7 @@ export class CostPriceService {
     let rawMaterialCostPaisa = 0n;
     let totalBagsConsumed = 0;
 
-    // Per-ingredient cost tracking (group batch consumptions by grain type)
+    // Per-ingredient cost tracking (group batch consumptions by raw material type)
     const ingredientCostMap = new Map<string, { name: string; code: string; bags: number; costPaisa: bigint }>();
 
     if (batchConsumptions.length > 0) {
@@ -197,16 +197,16 @@ export class CostPriceService {
         const bags = typeof bc.bagsConsumed === 'number' ? bc.bagsConsumed : Number(bc.bagsConsumed);
         totalBagsConsumed += bags;
 
-        // Group by grain type for per-ingredient breakdown
-        const gtId = bc.batch.grainTypeId;
+        // Group by raw material type for per-ingredient breakdown
+        const gtId = bc.batch.rawMaterialTypeId;
         const existing = ingredientCostMap.get(gtId);
         if (existing) {
           existing.bags += bags;
           existing.costPaisa += bc.totalCostPaisa;
         } else {
           ingredientCostMap.set(gtId, {
-            name: bc.batch.grainType.name,
-            code: bc.batch.grainType.code,
+            name: bc.batch.rawMaterialType.name,
+            code: bc.batch.rawMaterialType.code,
             bags,
             costPaisa: bc.totalCostPaisa,
           });
@@ -215,17 +215,17 @@ export class CostPriceService {
     } else {
       // Fallback: estimate from grams/meter × meters across all shift variants / bag weight × avg purchase price
       if (primarySV) {
-        const bagWeightGrams = variantIngredients[0]?.grainType?.bagWeightGrams
-          ?? primarySV.variant.grainType?.bagWeightGrams ?? 25000;
-        const primaryGrainTypeId = variantIngredients[0]?.grainTypeId ?? primarySV.variant.grainTypeId;
+        const bagWeightGrams = variantIngredients[0]?.rawMaterialType?.bagWeightGrams
+          ?? primarySV.variant.rawMaterialType?.bagWeightGrams ?? 25000;
+        const primaryRawMaterialTypeId = variantIngredients[0]?.rawMaterialTypeId ?? primarySV.variant.rawMaterialTypeId;
 
         for (const sv of entry.shiftVariants) {
           const gpm = sv.gramsPerMeter ? Number(sv.gramsPerMeter) : 0;
           totalBagsConsumed += (gpm * sv.metersProduced) / bagWeightGrams;
         }
 
-        const latestPurchase = primaryGrainTypeId ? await prisma.rawMaterialBatch.findFirst({
-          where: { grainTypeId: primaryGrainTypeId },
+        const latestPurchase = primaryRawMaterialTypeId ? await prisma.rawMaterialBatch.findFirst({
+          where: { rawMaterialTypeId: primaryRawMaterialTypeId },
           orderBy: { purchaseDate: 'desc' },
         }) : null;
         if (latestPurchase && totalBagsConsumed > 0) {
@@ -242,10 +242,10 @@ export class CostPriceService {
 
     // Add entries from actual consumption
     for (const [, data] of ingredientCostMap) {
-      const standardEntry = recipeIngredients.find((r) => r.grainTypeCode === data.code);
+      const standardEntry = recipeIngredients.find((r) => r.rawMaterialTypeCode === data.code);
       ingredientCosts.push({
-        grainTypeName: data.name,
-        grainTypeCode: data.code,
+        rawMaterialTypeName: data.name,
+        rawMaterialTypeCode: data.code,
         standardRatioPercent: standardEntry?.ratioPercent ?? 0,
         actualBagsConsumed: data.bags,
         actualCostPaisa: Number(data.costPaisa),
@@ -255,10 +255,10 @@ export class CostPriceService {
 
     // Add recipe ingredients with zero actual consumption (if any were not consumed)
     for (const ri of recipeIngredients) {
-      if (!ingredientCosts.find((ic) => ic.grainTypeCode === ri.grainTypeCode)) {
+      if (!ingredientCosts.find((ic) => ic.rawMaterialTypeCode === ri.rawMaterialTypeCode)) {
         ingredientCosts.push({
-          grainTypeName: ri.grainTypeName,
-          grainTypeCode: ri.grainTypeCode,
+          rawMaterialTypeName: ri.rawMaterialTypeName,
+          rawMaterialTypeCode: ri.rawMaterialTypeCode,
           standardRatioPercent: ri.ratioPercent,
           actualBagsConsumed: 0,
           actualCostPaisa: 0,

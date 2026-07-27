@@ -1063,15 +1063,21 @@ export class FinanceService {
     const revenuePaisa = gatePasses.reduce((acc: number, gp: { lineItems: { lineAmountPaisa: bigint }[] }) => {
       return acc + gp.lineItems.reduce((s: number, li: { lineAmountPaisa: bigint }) => s + Number(li.lineAmountPaisa), 0);
     }, 0);
+    // COGS = actual FIFO raw-material cost consumed by completed production
+    // entries this month (ProductionEntry has no costPricePaisa field — this
+    // previously referenced one that never existed in the schema and would
+    // have thrown a Prisma validation error at runtime; batchConsumptions is
+    // the real per-entry cost source, already tracked for FIFO costing).
     const productions = await prisma.productionEntry.findMany({
       where: { isDeleted: false, status: 'COMPLETED', date: { gte: start, lt: end } },
-      select: { costPricePaisa: true, shiftVariants: { select: { metersProduced: true } } },
+      select: { batchConsumptions: { select: { totalCostPaisa: true } } },
     });
-    const cogsPaisa = productions.reduce((acc: number, pe: { costPricePaisa: bigint | null; shiftVariants: { metersProduced: number | null }[] }) => {
-      const meters = pe.shiftVariants.reduce((s: number, sv: { metersProduced: number | null }) => s + (sv.metersProduced ?? 0), 0);
-      return acc + meters * Number(pe.costPricePaisa ?? 0);
+    const cogsPaisa = productions.reduce((acc: number, pe: { batchConsumptions: { totalCostPaisa: bigint }[] }) => {
+      return acc + pe.batchConsumptions.reduce((s: number, bc: { totalCostPaisa: bigint }) => s + Number(bc.totalCostPaisa), 0);
     }, 0);
-    const overhead = await prisma.monthlyOverhead.findUnique({ where: { year_month: { year, month } } });
+    // findFirst (not findUnique) so the tenant-scoping extension can inject
+    // organizationId — {year, month} alone is no longer globally unique (Phase 2).
+    const overhead = await prisma.monthlyOverhead.findFirst({ where: { year, month } });
     const laborPaisa = Number(overhead?.laborPaisa ?? 0);
     const rentPaisa = Number(overhead?.rentPaisa ?? 0);
     const transportationPaisa = Number(overhead?.transportationPaisa ?? 0);

@@ -14,12 +14,12 @@ import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { SearchableSelect, type SelectOption } from '../../components/forms/SearchableSelect';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
-import { settingsApi, type Recipe, type GrainType } from '../../services/settings.api';
+import { settingsApi, type Recipe, type RawMaterialType } from '../../services/settings.api';
 
 // ─── Ingredient Row ─────────────────────────────────────────────────────────
 
 interface IngredientRow {
-  grainTypeId: string;
+  rawMaterialTypeId: string;
   ratioPercent: string;
 }
 
@@ -27,12 +27,12 @@ interface IngredientRow {
 
 interface RecipeFormModalProps {
   recipe?: Recipe | null;
-  grainTypes: GrainType[];
+  rawMaterialTypes: RawMaterialType[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormModalProps) {
+function RecipeFormModal({ recipe, rawMaterialTypes, onClose, onSuccess }: RecipeFormModalProps) {
   const queryClient = useQueryClient();
   const isEdit = !!recipe;
 
@@ -40,14 +40,14 @@ function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormM
   const [description, setDescription] = useState(recipe?.description ?? '');
   const [ingredients, setIngredients] = useState<IngredientRow[]>(
     recipe?.ingredients.map((i) => ({
-      grainTypeId: i.grainTypeId,
+      rawMaterialTypeId: i.rawMaterialTypeId,
       ratioPercent: String(Number(i.ratioPercent)),
-    })) ?? [{ grainTypeId: '', ratioPercent: '' }],
+    })) ?? [{ rawMaterialTypeId: '', ratioPercent: '' }],
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const grainOptions: SelectOption[] = grainTypes.map((g) => ({
+  const grainOptions: SelectOption[] = rawMaterialTypes.map((g) => ({
     value: g.id,
     label: `${g.code} — ${g.name}`,
   }));
@@ -58,17 +58,17 @@ function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormM
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Recipe name is required';
     if (ingredients.length === 0) errs.ingredients = 'At least one ingredient is required';
-    const hasEmpty = ingredients.some((i) => !i.grainTypeId || !i.ratioPercent);
-    if (hasEmpty) errs.ingredients = 'All ingredients must have a grain type and ratio';
+    const hasEmpty = ingredients.some((i) => !i.rawMaterialTypeId || !i.ratioPercent);
+    if (hasEmpty) errs.ingredients = 'All ingredients must have a raw material type and ratio';
     if (Math.abs(totalRatio - 100) > 0.01) errs.total = `Ratios must sum to 100% (currently ${totalRatio.toFixed(2)}%)`;
-    // Check for duplicate grain types
-    const ids = ingredients.map((i) => i.grainTypeId).filter(Boolean);
-    if (new Set(ids).size !== ids.length) errs.ingredients = 'Duplicate grain types are not allowed';
+    // Check for duplicate raw material types
+    const ids = ingredients.map((i) => i.rawMaterialTypeId).filter(Boolean);
+    if (new Set(ids).size !== ids.length) errs.ingredients = 'Duplicate raw material types are not allowed';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }, [name, ingredients, totalRatio]);
 
-  const addIngredient = () => setIngredients([...ingredients, { grainTypeId: '', ratioPercent: '' }]);
+  const addIngredient = () => setIngredients([...ingredients, { rawMaterialTypeId: '', ratioPercent: '' }]);
   const removeIngredient = (idx: number) => setIngredients(ingredients.filter((_, i) => i !== idx));
   const updateIngredient = (idx: number, field: keyof IngredientRow, value: string) => {
     setIngredients(ingredients.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
@@ -80,7 +80,7 @@ function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormM
         name: name.trim(),
         description: description.trim() || undefined,
         ingredients: ingredients.map((i) => ({
-          grainTypeId: i.grainTypeId,
+          rawMaterialTypeId: i.rawMaterialTypeId,
           ratioPercent: parseFloat(i.ratioPercent),
         })),
       }),
@@ -100,7 +100,7 @@ function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormM
         name: name.trim(),
         description: description.trim() || undefined,
         ingredients: ingredients.map((i) => ({
-          grainTypeId: i.grainTypeId,
+          rawMaterialTypeId: i.rawMaterialTypeId,
           ratioPercent: parseFloat(i.ratioPercent),
         })),
       }),
@@ -170,9 +170,9 @@ function RecipeFormModal({ recipe, grainTypes, onClose, onSuccess }: RecipeFormM
                 <div className="flex-1">
                   <SearchableSelect
                     options={grainOptions}
-                    value={ing.grainTypeId}
-                    onChange={(val) => updateIngredient(idx, 'grainTypeId', val)}
-                    placeholder="Select grain type..."
+                    value={ing.rawMaterialTypeId}
+                    onChange={(val) => updateIngredient(idx, 'rawMaterialTypeId', val)}
+                    placeholder="Select raw material type..."
                   />
                 </div>
                 <div className="w-28">
@@ -246,7 +246,7 @@ export function RecipeManagement() {
 
   const { data: grainData } = useQuery({
     queryKey: ['grain-types'],
-    queryFn: () => settingsApi.getGrainTypes(),
+    queryFn: () => settingsApi.getRawMaterialTypes(),
   });
 
   const deleteMutation = useMutation({
@@ -258,7 +258,7 @@ export function RecipeManagement() {
   });
 
   const recipes = recipesData?.data ?? [];
-  const grainTypes = grainData?.data ?? [];
+  const rawMaterialTypes = grainData?.data ?? [];
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -316,7 +316,7 @@ export function RecipeManagement() {
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
                       <FlaskConical size={12} />
-                      {recipe.ingredients.map((i) => `${i.grainType.code} ${Number(i.ratioPercent)}%`).join(' + ')}
+                      {recipe.ingredients.map((i) => `${i.rawMaterialType.code} ${Number(i.ratioPercent)}%`).join(' + ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{recipe.ingredients.length}</td>
@@ -354,7 +354,7 @@ export function RecipeManagement() {
       {(showCreate || editingRecipe) && (
         <RecipeFormModal
           recipe={editingRecipe}
-          grainTypes={grainTypes}
+          rawMaterialTypes={rawMaterialTypes}
           onClose={() => {
             setShowCreate(false);
             setEditingRecipe(null);

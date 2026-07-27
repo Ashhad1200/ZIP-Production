@@ -21,7 +21,7 @@ function VendorFormModal({ vendor, onClose, onSuccess }: VendorFormModalProps) {
   const [contactName, setContactName] = useState(vendor?.contactName ?? '');
   const [phone, setPhone] = useState(vendor?.phone ?? '');
   const [address, setAddress] = useState(vendor?.address ?? '');
-  const [grainTypes, setGrainTypes] = useState(vendor?.grainTypes ?? '');
+  const [rawMaterialTypes, setRawMaterialTypes] = useState(vendor?.rawMaterialTypes ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -39,7 +39,7 @@ function VendorFormModal({ vendor, onClose, onSuccess }: VendorFormModalProps) {
         contactName: contactName.trim() || undefined,
         phone: phone.trim() || undefined,
         address: address.trim() || undefined,
-        grainTypes: grainTypes.trim() || undefined,
+        rawMaterialTypes: rawMaterialTypes.trim() || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendors'] });
@@ -56,7 +56,7 @@ function VendorFormModal({ vendor, onClose, onSuccess }: VendorFormModalProps) {
         contactName: contactName.trim() || undefined,
         phone: phone.trim() || undefined,
         address: address.trim() || undefined,
-        grainTypes: grainTypes.trim() || undefined,
+        rawMaterialTypes: rawMaterialTypes.trim() || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendors'] });
@@ -130,15 +130,15 @@ function VendorFormModal({ vendor, onClose, onSuccess }: VendorFormModalProps) {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Grain Types Supplied</label>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Raw Material Types Supplied</label>
           <input
             type="text"
-            value={grainTypes}
-            onChange={(e) => setGrainTypes(e.target.value)}
+            value={rawMaterialTypes}
+            onChange={(e) => setRawMaterialTypes(e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             placeholder="e.g. 3D, Glass (comma-separated)"
           />
-          <p className="mt-1 text-xs text-gray-500">Comma-separated grain type codes this vendor supplies</p>
+          <p className="mt-1 text-xs text-gray-500">Comma-separated raw material type codes this vendor supplies</p>
         </div>
 
         <div className="flex justify-end gap-3 pt-2">
@@ -228,7 +228,7 @@ export function VendorManagement() {
                   <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
                     {vendor.contactName && <span>{vendor.contactName}</span>}
                     {vendor.phone && <span>{vendor.phone}</span>}
-                    {vendor.grainTypes && <span>Grain types: {vendor.grainTypes}</span>}
+                    {vendor.rawMaterialTypes && <span>Grain types: {vendor.rawMaterialTypes}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

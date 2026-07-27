@@ -72,7 +72,7 @@ export class OrderService {
     const resolvedItems: Array<{ variantId: string; variantName: string; metersOrdered: number; ratePerMeterPaisa: bigint; lineAmountPaisa: bigint }> = [];
 
     for (const item of input.lineItems) {
-      const variant = await prisma.zipperVariant.findUnique({
+      const variant = await prisma.productVariant.findUnique({
         where: { id: item.variantId, isDeleted: false },
         select: { id: true, code: true, name: true },
       });

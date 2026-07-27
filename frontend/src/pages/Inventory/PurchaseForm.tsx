@@ -72,7 +72,7 @@ export function PurchaseForm() {
 function SeedPurchases() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState<number>(PAGINATION_DEFAULTS.PAGE);
-  const [grainTypeFilter, setGrainTypeFilter] = useState('');
+  const [rawMaterialTypeFilter, setRawMaterialTypeFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -82,15 +82,15 @@ function SeedPurchases() {
     queryKey: ['raw-material-stock'],
     queryFn: inventoryApi.getRawMaterials,
   });
-  const grainTypes = rawMaterialsResp?.data ?? [];
+  const rawMaterialTypes = rawMaterialsResp?.data ?? [];
 
   const { data, isLoading } = useQuery({
-    queryKey: ['raw-material-purchases', page, grainTypeFilter, sourceFilter, dateFrom, dateTo],
+    queryKey: ['raw-material-purchases', page, rawMaterialTypeFilter, sourceFilter, dateFrom, dateTo],
     queryFn: () =>
       inventoryApi.getPurchases({
         page,
         limit: PAGINATION_DEFAULTS.LIMIT,
-        grainTypeId: grainTypeFilter || undefined,
+        rawMaterialTypeId: rawMaterialTypeFilter || undefined,
         source: sourceFilter || undefined,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
@@ -108,10 +108,10 @@ function SeedPurchases() {
       render: (row) => formatDatePKT(row.purchaseDate),
     },
     {
-      key: 'grainType',
-      header: 'Grain Type',
+      key: 'rawMaterialType',
+      header: 'Raw Material Type',
       sortable: true,
-      render: (row) => row.grainType.name,
+      render: (row) => row.rawMaterialType.name,
     },
     {
       key: 'vendor',
@@ -168,7 +168,7 @@ function SeedPurchases() {
         </span>
       </div>
       <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-500">{row.grainType.name}</span>
+        <span className="text-gray-500">{row.rawMaterialType.name}</span>
         <span
           className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
             row.source === 'CONTAINER'
@@ -204,15 +204,15 @@ function SeedPurchases() {
       <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
         <SearchableSelect
           options={[
-            { value: '', label: 'All Grain Types' },
-            ...grainTypes.map((g) => ({
-              value: g.grainType.id,
-              label: g.grainType.name,
+            { value: '', label: 'All Raw Material Types' },
+            ...rawMaterialTypes.map((g) => ({
+              value: g.rawMaterialType.id,
+              label: g.rawMaterialType.name,
             })),
           ]}
-          value={grainTypeFilter}
-          onChange={(v) => { setGrainTypeFilter(v); setPage(1); }}
-          placeholder="All Grain Types"
+          value={rawMaterialTypeFilter}
+          onChange={(v) => { setRawMaterialTypeFilter(v); setPage(1); }}
+          placeholder="All Raw Material Types"
           clearable
         />
         <SearchableSelect
@@ -246,9 +246,9 @@ function SeedPurchases() {
 
       {showForm && (
         <SeedPurchaseFormModal
-          grainTypes={grainTypes.map((g) => ({
-            value: g.grainType.id,
-            label: g.grainType.name,
+          rawMaterialTypes={rawMaterialTypes.map((g) => ({
+            value: g.rawMaterialType.id,
+            label: g.rawMaterialType.name,
           }))}
           onClose={() => setShowForm(false)}
           onSuccess={() => {
@@ -417,17 +417,17 @@ function PackagingPurchases() {
 // ─── Seed Purchase Form Modal ───────────────────────────────────────────────
 
 interface SeedPurchaseFormModalProps {
-  grainTypes: { value: string; label: string }[];
+  rawMaterialTypes: { value: string; label: string }[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
 function SeedPurchaseFormModal({
-  grainTypes,
+  rawMaterialTypes,
   onClose,
   onSuccess,
 }: SeedPurchaseFormModalProps) {
-  const [grainTypeId, setGrainTypeId] = useState('');
+  const [rawMaterialTypeId, setRawMaterialTypeId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [numberOfBags, setNumberOfBags] = useState('');
   const [ratePerBagPaisa, setRatePerBagPaisa] = useState(0);
@@ -452,7 +452,7 @@ function SeedPurchaseFormModal({
 
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
-    if (!grainTypeId) errs.grainTypeId = 'Grain type is required';
+    if (!rawMaterialTypeId) errs.rawMaterialTypeId = 'Grain type is required';
     if (!numberOfBags || Number(numberOfBags) <= 0)
       errs.numberOfBags = 'Enter valid number of bags';
     if (!ratePerBagPaisa || ratePerBagPaisa <= 0)
@@ -461,7 +461,7 @@ function SeedPurchaseFormModal({
     if (!source) errs.source = 'Source is required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [grainTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source]);
+  }, [rawMaterialTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source]);
 
   const mutation = useMutation({
     mutationFn: (payload: CreatePurchasePayload) =>
@@ -482,7 +482,7 @@ function SeedPurchaseFormModal({
     e.preventDefault();
     if (!validate()) return;
     mutation.mutate({
-      grainTypeId,
+      rawMaterialTypeId,
       vendorId: vendorId || undefined,
       numberOfBags: Number(numberOfBags),
       ratePerBagPaisa,
@@ -513,12 +513,12 @@ function SeedPurchaseFormModal({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <SearchableSelect
-          label="Grain Type"
-          options={grainTypes}
-          value={grainTypeId}
-          onChange={setGrainTypeId}
-          placeholder="Select grain type"
-          error={errors.grainTypeId}
+          label="Raw Material Type"
+          options={rawMaterialTypes}
+          value={rawMaterialTypeId}
+          onChange={setRawMaterialTypeId}
+          placeholder="Select raw material type"
+          error={errors.rawMaterialTypeId}
         />
 
         <SearchableSelect

@@ -1,0 +1,7 @@
+{
+  "timestamp": "2026-07-25T11:03:23Z",
+  "changed_file": "src/router.tsx",
+  "test_command": "npx vitest run --reporter=verbose",
+  "related_test": "",
+  "recommendation": "テストの実行を推奨します"
+}

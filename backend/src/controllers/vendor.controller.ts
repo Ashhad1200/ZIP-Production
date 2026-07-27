@@ -27,12 +27,12 @@ export class VendorController {
 
   async create(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { name, contactName, phone, address, grainTypes } = req.body;
+      const { name, contactName, phone, address, rawMaterialTypes } = req.body;
       if (!name?.trim()) {
         res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Vendor name is required' } });
         return;
       }
-      const result = await vendorService.create({ name, contactName, phone, address, grainTypes }, req.user!.userId);
+      const result = await vendorService.create({ name, contactName, phone, address, rawMaterialTypes }, req.user!.userId);
       res.status(201).json({ data: result });
     } catch (error) {
       next(error);

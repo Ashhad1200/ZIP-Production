@@ -13,6 +13,19 @@ function hashPassword(password: string): string {
   return `${salt}:${hash}`;
 }
 
+// All seed data belongs to the legacy/default tenant (organizationId = null
+// — the original single-tenant zipper deployment predating Phase 2's
+// multi-tenancy). Compound unique keys like `organizationId_code` require a
+// non-null value in Prisma's generated types, so `.upsert()` can't target a
+// null-organizationId row directly; find-then-write instead.
+async function upsertAccountByCode(code: string, create: Parameters<typeof prisma.account.create>[0]['data'], update: Parameters<typeof prisma.account.update>[0]['data'] = {}) {
+  const existing = await prisma.account.findFirst({ where: { code, organizationId: null } });
+  if (existing) {
+    return Object.keys(update).length ? prisma.account.update({ where: { id: existing.id }, data: update }) : existing;
+  }
+  return prisma.account.create({ data: create });
+}
+
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
@@ -45,31 +58,11 @@ async function main() {
   // ─── 2. Chart of Accounts ──────────────────────────────────────────────
   console.log('📒 Seeding chart of accounts...');
 
-  const acc1000 = await prisma.account.upsert({
-    where: { code: '1000' },
-    update: {},
-    create: { code: '1000', name: 'Assets', accountType: 'ASSET', isGroup: true },
-  });
-  const acc2000 = await prisma.account.upsert({
-    where: { code: '2000' },
-    update: {},
-    create: { code: '2000', name: 'Liabilities', accountType: 'LIABILITY', isGroup: true },
-  });
-  const acc3000 = await prisma.account.upsert({
-    where: { code: '3000' },
-    update: {},
-    create: { code: '3000', name: 'Equity', accountType: 'EQUITY', isGroup: true },
-  });
-  const acc4000 = await prisma.account.upsert({
-    where: { code: '4000' },
-    update: {},
-    create: { code: '4000', name: 'Revenue', accountType: 'REVENUE', isGroup: true },
-  });
-  const acc5000 = await prisma.account.upsert({
-    where: { code: '5000' },
-    update: {},
-    create: { code: '5000', name: 'Expenses', accountType: 'EXPENSE', isGroup: true },
-  });
+  const acc1000 = await upsertAccountByCode('1000', { code: '1000', name: 'Assets', accountType: 'ASSET', isGroup: true });
+  const acc2000 = await upsertAccountByCode('2000', { code: '2000', name: 'Liabilities', accountType: 'LIABILITY', isGroup: true });
+  const acc3000 = await upsertAccountByCode('3000', { code: '3000', name: 'Equity', accountType: 'EQUITY', isGroup: true });
+  const acc4000 = await upsertAccountByCode('4000', { code: '4000', name: 'Revenue', accountType: 'REVENUE', isGroup: true });
+  const acc5000 = await upsertAccountByCode('5000', { code: '5000', name: 'Expenses', accountType: 'EXPENSE', isGroup: true });
 
   const leafAccounts = [
     { code: '1100', name: 'Cash', type: 'ASSET' as const, parentId: acc1000.id, isGroup: false },
@@ -93,16 +86,12 @@ async function main() {
   ];
 
   for (const acc of leafAccounts) {
-    await prisma.account.upsert({
-      where: { code: acc.code },
-      update: {},
-      create: {
-        code: acc.code,
-        name: acc.name,
-        accountType: acc.type,
-        parentId: acc.parentId,
-        isGroup: acc.isGroup,
-      },
+    await upsertAccountByCode(acc.code, {
+      code: acc.code,
+      name: acc.name,
+      accountType: acc.type,
+      parentId: acc.parentId,
+      isGroup: acc.isGroup,
     });
   }
 
@@ -158,37 +147,37 @@ async function main() {
   ];
 
   for (const s of settingsData) {
-    await prisma.systemSetting.upsert({
-      where: { key: s.key },
-      update: { value: s.value, description: s.description },
-      create: { key: s.key, value: s.value, description: s.description },
-    });
+    const existing = await prisma.systemSetting.findFirst({ where: { key: s.key, organizationId: null } });
+    if (existing) {
+      await prisma.systemSetting.update({ where: { id: existing.id }, data: { value: s.value, description: s.description } });
+    } else {
+      await prisma.systemSetting.create({ data: { key: s.key, value: s.value, description: s.description } });
+    }
   }
 
-  // ─── 5. Grain Types ────────────────────────────────────────────────────
+  // ─── 5. Raw Material Types ────────────────────────────────────────────────────
   // Three raw material grades derived from the product cost formulas.
   // Bag cost is set at purchase time (FIFO); grade here identifies the material.
-  console.log('🌾 Seeding grain types...');
-  const grainTypeData = [
+  console.log('🌾 Seeding raw material types...');
+  const rawMaterialTypeData = [
     { code: 'SG-A', name: 'Standard Grade A', description: 'Standard grade — 27,000 Rs/25 kg bag. Used for SL-11 and PEF-13/12/11.' },
     { code: 'SG-B', name: 'Standard Grade B', description: 'Standard grade — 22,000 Rs/25 kg bag. Used for S3a.' },
     { code: 'SG-C', name: 'Standard Grade C', description: 'Standard grade — 24,000 Rs/25 kg bag. Used for Rice Zipper and SL-25.' },
   ];
 
-  const grainTypeMap: Record<string, string> = {};
-  for (const g of grainTypeData) {
-    const grain = await prisma.grainType.upsert({
-      where: { code: g.code },
-      update: { name: g.name, description: g.description },
-      create: { code: g.code, name: g.name, description: g.description, bagWeightGrams: 25000, createdBy: adminId },
-    });
-    grainTypeMap[g.code] = grain.id;
+  const rawMaterialTypeMap: Record<string, string> = {};
+  for (const g of rawMaterialTypeData) {
+    const existingGrain = await prisma.rawMaterialType.findFirst({ where: { code: g.code, organizationId: null } });
+    const grain = existingGrain
+      ? await prisma.rawMaterialType.update({ where: { id: existingGrain.id }, data: { name: g.name, description: g.description } })
+      : await prisma.rawMaterialType.create({ data: { code: g.code, name: g.name, description: g.description, bagWeightGrams: 25000, createdBy: adminId } });
+    rawMaterialTypeMap[g.code] = grain.id;
 
-    // Ensure a zero-stock entry exists for each grain type
-    const stockExists = await prisma.rawMaterialStock.findUnique({ where: { grainTypeId: grain.id } });
+    // Ensure a zero-stock entry exists for each raw material type
+    const stockExists = await prisma.rawMaterialStock.findUnique({ where: { rawMaterialTypeId: grain.id } });
     if (!stockExists) {
       await prisma.rawMaterialStock.create({
-        data: { grainTypeId: grain.id, currentBags: 0, createdBy: adminId },
+        data: { rawMaterialTypeId: grain.id, currentBags: 0, createdBy: adminId },
       });
     }
   }
@@ -222,10 +211,9 @@ async function main() {
   //   Rice Zipper (18 m/min): 12.22 kW, 12,960 m → 0.01131 kWh/m × 45 Rs = 0.509 Rs/m ✓
   //   SL-25 (30 m/min):       12.22 kW, 21,600 m → 0.00679 kWh/m × 60 Rs = 0.407 Rs/m ✓
   console.log('🏭 Seeding plant & machines...');
-  const plant = await prisma.plant.upsert({
-    where: { name: 'Main Factory' },
-    update: {},
-    create: { name: 'Main Factory', location: 'Main Production Floor', createdBy: adminId },
+  const existingPlant = await prisma.plant.findFirst({ where: { name: 'Main Factory', organizationId: null } });
+  const plant = existingPlant ?? await prisma.plant.create({
+    data: { name: 'Main Factory', location: 'Main Production Floor', createdBy: adminId },
   });
 
   const machineData = [
@@ -271,15 +259,15 @@ async function main() {
     }
   }
 
-  // ─── 8. Zipper Variants ────────────────────────────────────────────────
+  // ─── 8. Product Variants ────────────────────────────────────────────────
   // Each variant has exactly one raw-material ingredient (100%) from the formula sheets.
-  console.log('🤐 Seeding zipper variants...');
+  console.log('🤐 Seeding product variants...');
   const variantData = [
     {
       code: 'SL-11',
       name: 'SL-11',
       description: 'SL-11 zipper — 6.6 g/m, 45 m/min output',
-      standardGramsPerMeter: 6.6,
+      standardConsumptionRatio: 6.6,
       metersPerCarton: 2500,
       packagingName: 'Carton (2500 m)',
       grainCode: 'SG-A',
@@ -288,7 +276,7 @@ async function main() {
       code: 'S3A',
       name: 'S3a',
       description: 'S3a zipper — 4.1 g/m, 45 m/min output',
-      standardGramsPerMeter: 4.1,
+      standardConsumptionRatio: 4.1,
       metersPerCarton: 4000,
       packagingName: 'Carton (4000 m)',
       grainCode: 'SG-B',
@@ -297,7 +285,7 @@ async function main() {
       code: 'PEF-13',
       name: 'PEF-13/12/11',
       description: 'PEF-13/12/11 zipper — 5.5 g/m, 45 m/min output',
-      standardGramsPerMeter: 5.5,
+      standardConsumptionRatio: 5.5,
       metersPerCarton: 3000,
       packagingName: 'Carton (3000 m)',
       grainCode: 'SG-A',
@@ -306,7 +294,7 @@ async function main() {
       code: 'RICE',
       name: 'Rice Zipper',
       description: 'Rice Zipper — 30 g/m, 18 m/min output (heavy-duty bag zipper)',
-      standardGramsPerMeter: 30,
+      standardConsumptionRatio: 30,
       metersPerCarton: 1000,
       packagingName: 'Carton (1000 m)',
       grainCode: 'SG-C',
@@ -315,7 +303,7 @@ async function main() {
       code: 'SL-25',
       name: 'SL-25',
       description: 'SL-25 zipper — 18 g/m, 30 m/min output',
-      standardGramsPerMeter: 18,
+      standardConsumptionRatio: 18,
       metersPerCarton: 1000,
       packagingName: 'Carton (1000 m)',
       grainCode: 'SG-C',
@@ -323,31 +311,35 @@ async function main() {
   ];
 
   for (const v of variantData) {
-    const variant = await prisma.zipperVariant.upsert({
-      where: { code: v.code },
-      update: {
-        name: v.name,
-        description: v.description,
-        standardGramsPerMeter: v.standardGramsPerMeter,
-        metersPerCarton: v.metersPerCarton,
-        packagingMaterialId: packagingMap[v.packagingName],
-      },
-      create: {
-        code: v.code,
-        name: v.name,
-        description: v.description,
-        standardGramsPerMeter: v.standardGramsPerMeter,
-        metersPerCarton: v.metersPerCarton,
-        packagingMaterialId: packagingMap[v.packagingName],
-        createdBy: adminId,
-      },
-    });
+    const existingVariant = await prisma.productVariant.findFirst({ where: { code: v.code, organizationId: null } });
+    const variant = existingVariant
+      ? await prisma.productVariant.update({
+          where: { id: existingVariant.id },
+          data: {
+            name: v.name,
+            description: v.description,
+            standardConsumptionRatio: v.standardConsumptionRatio,
+            metersPerCarton: v.metersPerCarton,
+            packagingMaterialId: packagingMap[v.packagingName],
+          },
+        })
+      : await prisma.productVariant.create({
+          data: {
+            code: v.code,
+            name: v.name,
+            description: v.description,
+            standardConsumptionRatio: v.standardConsumptionRatio,
+            metersPerCarton: v.metersPerCarton,
+            packagingMaterialId: packagingMap[v.packagingName],
+            createdBy: adminId,
+          },
+        });
 
-    // Upsert the single ingredient (100% of one grain type)
+    // Upsert the single ingredient (100% of one raw material type)
     await prisma.variantIngredient.upsert({
-      where: { variantId_grainTypeId: { variantId: variant.id, grainTypeId: grainTypeMap[v.grainCode] } },
+      where: { variantId_rawMaterialTypeId: { variantId: variant.id, rawMaterialTypeId: rawMaterialTypeMap[v.grainCode] } },
       update: { ratioPercent: 100 },
-      create: { variantId: variant.id, grainTypeId: grainTypeMap[v.grainCode], ratioPercent: 100 },
+      create: { variantId: variant.id, rawMaterialTypeId: rawMaterialTypeMap[v.grainCode], ratioPercent: 100 },
     });
   }
 
@@ -387,20 +379,22 @@ async function main() {
   ];
 
   for (const { year, month } of overheadMonths) {
-    await prisma.monthlyOverhead.upsert({
-      where: { year_month: { year, month } },
-      update: {},   // Don't overwrite if user has already customised
-      create: {
-        year,
-        month,
-        laborPaisa: BigInt(36000000),        // 360,000 Rs (operator 150k + labour 210k)
-        rentPaisa: BigInt(9000000),           // 90,000 Rs
-        transportationPaisa: BigInt(10000000), // 100,000 Rs
-        packingPaisa: BigInt(0),
-        miscellaneousPaisa: BigInt(6000000),  // 60,000 Rs (petty cash)
-        notes: 'Seeded from formula sheets — total 610,000 Rs/month',
-      },
-    });
+    const existingOverhead = await prisma.monthlyOverhead.findFirst({ where: { year, month, organizationId: null } });
+    if (!existingOverhead) {
+      // Don't overwrite if user has already customised — only create when absent.
+      await prisma.monthlyOverhead.create({
+        data: {
+          year,
+          month,
+          laborPaisa: BigInt(36000000),        // 360,000 Rs (operator 150k + labour 210k)
+          rentPaisa: BigInt(9000000),           // 90,000 Rs
+          transportationPaisa: BigInt(10000000), // 100,000 Rs
+          packingPaisa: BigInt(0),
+          miscellaneousPaisa: BigInt(6000000),  // 60,000 Rs (petty cash)
+          notes: 'Seeded from formula sheets — total 610,000 Rs/month',
+        },
+      });
+    }
   }
 
   // ─── Platform plane (multi-tenant SaaS billing/backoffice) ────────────────
@@ -482,10 +476,10 @@ async function main() {
   console.log(`   Accounts:            ${5 + leafAccounts.length}`);
   console.log(`   Expense Categories:  ${parentCatNames.length + subCategories.length}`);
   console.log(`   System Settings:     ${settingsData.length}`);
-  console.log(`   Grain Types:         ${grainTypeData.length}`);
+  console.log(`   Raw Material Types:         ${rawMaterialTypeData.length}`);
   console.log(`   Packaging Materials: ${packagingData.length}`);
   console.log(`   Plant:               1 (Main Factory with ${machineData.length} machines)`);
-  console.log(`   Zipper Variants:     ${variantData.length}`);
+  console.log(`   Product Variants:     ${variantData.length}`);
   console.log(`   Electricity Rate:    50 Rs/kWhr (5,000 paisa/unit)`);
   console.log(`   Monthly Overheads:   ${overheadMonths.length} months`);
   console.log(`   Platform Modules:    ${moduleDefs.length}`);

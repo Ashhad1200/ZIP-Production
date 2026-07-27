@@ -1,4 +1,5 @@
 import prisma from '../../config/database';
+import { recomputeSubscriptionStatus } from './subscription.service';
 
 function slugify(name: string): string {
   return name
@@ -124,6 +125,30 @@ export class OrganizationService {
   async getOrganizationIdForUser(userId: string): Promise<string | null> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
     return user?.organizationId ?? null;
+  }
+
+  /**
+   * Tenant-facing subscription status (for the "Payment Required" / billing
+   * screen — see frontend/src/pages/Billing). Recomputes TRIAL/ACTIVE ->
+   * PAST_DUE lazily (no cron dependency) before returning, same as the
+   * backoffice dashboard summary.
+   */
+  async getMySubscription(userId: string) {
+    const organizationId = await this.getOrganizationIdForUser(userId);
+    if (!organizationId) {
+      // Legacy/default tenant (pre-multi-tenancy user) — no subscription to report.
+      return null;
+    }
+
+    const subscription = await prisma.subscription.findFirst({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: true },
+    });
+    if (!subscription) return null;
+
+    const refreshed = await recomputeSubscriptionStatus(subscription.id);
+    return { ...subscription, status: refreshed?.status ?? subscription.status };
   }
 
   /**

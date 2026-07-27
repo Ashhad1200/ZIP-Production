@@ -1,4 +1,4 @@
-import prisma from '../config/database';
+import prisma, { TenantTransactionClient } from '../config/database';
 import { JournalEntryStatus, Prisma } from '@prisma/client';
 
 interface JournalEntryLineInput {
@@ -25,7 +25,7 @@ export class AccountingService {
   /**
    * Create a journal entry with lines. Optionally auto-post.
    */
-  async createJournalEntry(input: CreateJournalEntryInput, tx?: Prisma.TransactionClient) {
+  async createJournalEntry(input: CreateJournalEntryInput, tx?: TenantTransactionClient) {
     const client = tx || prisma;
 
     // Validate lines balance
@@ -96,7 +96,7 @@ export class AccountingService {
   /**
    * Post a draft journal entry. The database trigger will enforce balance.
    */
-  async postEntry(entryId: string, userId: string, tx?: Prisma.TransactionClient) {
+  async postEntry(entryId: string, userId: string, tx?: TenantTransactionClient) {
     const client = tx || prisma;
 
     const entry = await client.journalEntry.findUnique({
@@ -180,9 +180,11 @@ export class AccountingService {
   /**
    * Get account by code (for use in service layer).
    */
-  async getAccountByCode(code: string, tx?: Prisma.TransactionClient) {
+  async getAccountByCode(code: string, tx?: TenantTransactionClient) {
     const client = tx || prisma;
-    const account = await client.account.findUnique({ where: { code } });
+    // findFirst (not findUnique) so the tenant-scoping extension can inject
+    // organizationId — code alone is no longer globally unique (Phase 2).
+    const account = await client.account.findFirst({ where: { code } });
     if (!account) {
       throw Object.assign(new Error(`Account with code ${code} not found`), { statusCode: 404, code: 'ACCOUNT_NOT_FOUND' });
     }

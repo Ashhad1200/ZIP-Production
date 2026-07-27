@@ -63,8 +63,8 @@ const cards: SettingsCard[] = [
     adminOnly: true,
   },
   {
-    title: 'Variants & Grain Types',
-    description: 'Configure product variants and grain type definitions',
+    title: 'Variants & Raw Material Types',
+    description: 'Configure product variants and raw material type definitions',
     icon: <Layers size={24} />,
     path: '/settings/variants',
     adminOnly: true,

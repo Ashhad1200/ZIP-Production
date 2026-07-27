@@ -43,8 +43,8 @@ export function ProductionEntryComplete() {
       setMetersProduced(String(sv.metersProduced));
     if (gramsPerMeter === '' && sv?.gramsPerMeter != null)
       setGramsPerMeter(String(sv.gramsPerMeter));
-    else if (gramsPerMeter === '' && sv?.variant?.standardGramsPerMeter != null)
-      setGramsPerMeter(String(sv.variant.standardGramsPerMeter));
+    else if (gramsPerMeter === '' && sv?.variant?.standardConsumptionRatio != null)
+      setGramsPerMeter(String(sv.variant.standardConsumptionRatio));
     if (sv?.scrapWeightGrams != null && sv.scrapWeightGrams > 0)
       setScrapWeightGrams(String(sv.scrapWeightGrams));
   }, [entry]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -236,7 +236,7 @@ export function ProductionEntryComplete() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       {sv.variant.ingredients && sv.variant.ingredients.length > 0
-                        ? sv.variant.ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')
+                        ? sv.variant.ingredients.map((i) => `${i.rawMaterialTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')
                         : '—'}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">{sv.metersProduced.toLocaleString()}</td>
@@ -302,7 +302,7 @@ export function ProductionEntryComplete() {
                 <FlaskConical size={12} className="text-indigo-600" /> Formula:
               </span>
               <span className="text-indigo-700">
-                {variant.variant.ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+                {variant.variant.ingredients.map((i) => `${i.rawMaterialTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
               </span>
             </>
           )}

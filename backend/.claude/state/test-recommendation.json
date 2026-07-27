@@ -1,0 +1,7 @@
+{
+  "timestamp": "2026-07-26T10:04:46Z",
+  "changed_file": "E:/ZIP-Production/frontend/src/pages/Marketing/LandingPage.tsx",
+  "test_command": "npx jest --verbose",
+  "related_test": "",
+  "recommendation": "テストの実行を推奨します"
+}

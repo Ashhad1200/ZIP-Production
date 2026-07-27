@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { inventoryApi, type FifoBatch, type GrainTypeRef } from '../../services/inventory.api';
+import { inventoryApi, type FifoBatch, type RawMaterialTypeRef } from '../../services/inventory.api';
 import { formatPaisaToRupees } from '../../utils/currency';
 import { ChevronDown, ChevronRight, Package } from 'lucide-react';
 
-function GrainTypeSection({ grainType, batches }: { grainType: GrainTypeRef; batches: FifoBatch[] }) {
+function RawMaterialTypeSection({ rawMaterialType, batches }: { rawMaterialType: RawMaterialTypeRef; batches: FifoBatch[] }) {
   const [open, setOpen] = useState(true);
   const activeBatches = batches.filter(b => !b.isExhausted);
   const exhaustedBatches = batches.filter(b => b.isExhausted);
@@ -19,8 +19,8 @@ function GrainTypeSection({ grainType, batches }: { grainType: GrainTypeRef; bat
         <div className="flex items-center gap-3">
           {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           <Package size={18} className="text-indigo-600" />
-          <span className="font-semibold text-gray-800">{grainType.name}</span>
-          <span className="text-xs text-gray-500 bg-gray-200 rounded px-2 py-0.5">{grainType.code}</span>
+          <span className="font-semibold text-gray-800">{rawMaterialType.name}</span>
+          <span className="text-xs text-gray-500 bg-gray-200 rounded px-2 py-0.5">{rawMaterialType.code}</span>
         </div>
         <div className="text-sm text-gray-600">
           <span className="font-medium">{totalRemaining}</span> bags remaining &middot;
@@ -96,10 +96,10 @@ export function FifoBatchesPage() {
 
   const batches = data?.data ?? [];
 
-  // Group by grain type
-  const grouped = batches.reduce<Record<string, { grainType: GrainTypeRef; batches: FifoBatch[] }>>((acc, b) => {
-    const key = b.grainType.id;
-    if (!acc[key]) acc[key] = { grainType: b.grainType, batches: [] };
+  // Group by raw material type
+  const grouped = batches.reduce<Record<string, { rawMaterialType: RawMaterialTypeRef; batches: FifoBatch[] }>>((acc, b) => {
+    const key = b.rawMaterialType.id;
+    if (!acc[key]) acc[key] = { rawMaterialType: b.rawMaterialType, batches: [] };
     acc[key].batches.push(b);
     return acc;
   }, {});
@@ -138,8 +138,8 @@ export function FifoBatchesPage() {
         </div>
       )}
 
-      {Object.values(grouped).map(({ grainType, batches: grainBatches }) => (
-        <GrainTypeSection key={grainType.id} grainType={grainType} batches={grainBatches} />
+      {Object.values(grouped).map(({ rawMaterialType, batches: grainBatches }) => (
+        <RawMaterialTypeSection key={rawMaterialType.id} rawMaterialType={rawMaterialType} batches={grainBatches} />
       ))}
     </div>
   );

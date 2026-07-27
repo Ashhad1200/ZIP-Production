@@ -3,7 +3,7 @@ import type { PaginatedResponse } from '../types';
 
 // Types
 export interface VariantRef { id: string; code: string; name: string; metersPerCarton?: number | null; }
-export interface GrainTypeRef { id: string; code: string; name: string; }
+export interface RawMaterialTypeRef { id: string; code: string; name: string; }
 
 export interface FinishedGoodsStockItem {
   id: string;
@@ -17,7 +17,7 @@ export interface FinishedGoodsStockItem {
 
 export interface RawMaterialStockItem {
   id: string;
-  grainType: GrainTypeRef;
+  rawMaterialType: RawMaterialTypeRef;
   currentBags: number;
   lowStockThresholdBags: number | null;
   isBelowThreshold: boolean;
@@ -27,7 +27,7 @@ export interface RawMaterialStockItem {
 
 export interface PurchaseRecord {
   id: string;
-  grainType: GrainTypeRef;
+  rawMaterialType: RawMaterialTypeRef;
   vendor: { id: string; name: string } | null;
   numberOfBags: number;
   ratePerBagPaisa: number;
@@ -40,7 +40,7 @@ export interface PurchaseRecord {
 }
 
 export interface CreatePurchasePayload {
-  grainTypeId: string;
+  rawMaterialTypeId: string;
   vendorId?: string;
   numberOfBags: number;
   ratePerBagPaisa: number;
@@ -51,13 +51,13 @@ export interface CreatePurchasePayload {
 export interface PurchaseResult {
   id: string;
   totalAmountPaisa: number;
-  stockUpdate: { grainTypeId: string; newStockBags: number; };
+  stockUpdate: { rawMaterialTypeId: string; newStockBags: number; };
 }
 
 export interface PurchaseFilters {
   page?: number;
   limit?: number;
-  grainTypeId?: string;
+  rawMaterialTypeId?: string;
   source?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -69,14 +69,14 @@ export interface FinishedGoodsFilters {
 }
 
 export interface ConsumptionReportFilters {
-  grainTypeId?: string;
+  rawMaterialTypeId?: string;
   period?: string;
   dateFrom?: string;
   dateTo?: string;
 }
 
 export interface ConsumptionGrainData {
-  grainType: string;
+  rawMaterialType: string;
   purchasedBags: number;
   consumedBags: number;
   netChange: number;
@@ -86,14 +86,14 @@ export interface ConsumptionGrainData {
 
 export interface ConsumptionReportData {
   period: string;
-  grainTypes: ConsumptionGrainData[];
+  rawMaterialTypes: ConsumptionGrainData[];
 }
 
 // ─── FIFO Batch types ─────────────────────────────────────────────────────────
 
 export interface FifoBatch {
   id: string;
-  grainType: GrainTypeRef;
+  rawMaterialType: RawMaterialTypeRef;
   purchaseDate: string;
   source: 'CONTAINER' | 'SPOT_MARKET';
   bagsTotal: number;
@@ -146,7 +146,7 @@ export const inventoryApi = {
     api.put<{ data: RawMaterialStockItem }>(`/inventory/raw-materials/${id}/threshold`, { thresholdBags }).then(r => r.data),
 
   // FIFO Batches
-  getBatches: (params: { grainTypeId?: string; includeExhausted?: boolean } = {}) =>
+  getBatches: (params: { rawMaterialTypeId?: string; includeExhausted?: boolean } = {}) =>
     api.get<{ data: FifoBatch[] }>('/inventory/raw-materials/batches', { params }).then(r => r.data),
 
   // Electricity Rates

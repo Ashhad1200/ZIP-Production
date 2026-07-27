@@ -83,6 +83,14 @@ const BackofficePaymentsPage = React.lazy(() =>
   import('./pages/Backoffice').then((m) => ({ default: m.PaymentsPage })),
 );
 
+// Public marketing/signup site + tenant billing
+const LandingPage = React.lazy(() =>
+  import('./pages/Marketing/LandingPage').then((m) => ({ default: m.LandingPage })),
+);
+const BillingPage = React.lazy(() =>
+  import('./pages/Billing/BillingPage').then((m) => ({ default: m.BillingPage })),
+);
+
 // --------------- Guards ---------------
 
 function RoleGuard({
@@ -94,9 +102,21 @@ function RoleGuard({
 }) {
   const { hasRole } = useRole();
   if (!hasRole(...roles)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
+}
+
+/**
+ * Root route ("/"): marketing landing page for logged-out visitors, the
+ * tenant dashboard for logged-in ones — the standard SaaS split, rather than
+ * requiring a separate /get-started path just to see the marketing site.
+ */
+function HomeRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <LoadingSpinner size="lg" />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return <Lazy element={LandingPage} />;
 }
 
 function ProtectedLayout() {
@@ -139,6 +159,12 @@ function Lazy({ element: El }: { element: React.LazyExoticComponent<React.Compon
 const allRoles = Object.values(ROLES);
 
 export const routes: RouteObject[] = [
+  // Root: marketing landing page (logged out) or dashboard redirect (logged in)
+  {
+    path: '/',
+    element: <HomeRoute />,
+  },
+
   // Public routes
   {
     path: '/login',
@@ -151,6 +177,12 @@ export const routes: RouteObject[] = [
   {
     path: '/gp-verify',
     element: <Lazy element={VerifyGatePassPage} />,
+  },
+
+  // Public marketing / self-serve signup site
+  {
+    path: '/get-started',
+    element: <Lazy element={LandingPage} />,
   },
 
   // Backoffice (BD Matrix platform admin — independent auth plane from the tenant app above)
@@ -174,10 +206,18 @@ export const routes: RouteObject[] = [
     element: <ProtectedLayout />,
     children: [
       {
-        index: true,
+        path: 'dashboard',
         element: (
           <RoleGuard roles={allRoles}>
             <Lazy element={DashboardPage} />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'billing',
+        element: (
+          <RoleGuard roles={[ROLES.SUPER_ADMIN]}>
+            <Lazy element={BillingPage} />
           </RoleGuard>
         ),
       },

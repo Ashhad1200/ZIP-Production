@@ -107,7 +107,7 @@ export function ProductionEntries() {
             <span>{codes}</span>
             {ingredients && ingredients.length > 1 && (
               <div className="text-xs text-indigo-500">
-                {ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+                {ingredients.map((i) => `${i.rawMaterialTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
               </div>
             )}
           </div>

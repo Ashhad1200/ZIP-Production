@@ -305,7 +305,7 @@ export class DashboardService {
   // ─── Revenue Overview ────────────────────────────────────
   async getRevenueOverview(year: number) {
     // Find Cash/Bank account (code '1000')
-    const cashAccount = await prisma.account.findUnique({ where: { code: '1000' } });
+    const cashAccount = await prisma.account.findFirst({ where: { code: '1000' } });
     if (!cashAccount) {
       return {
         year,

@@ -43,17 +43,17 @@ export interface Company {
 }
 
 export interface VariantIngredient {
-  grainTypeId: string;
+  rawMaterialTypeId: string;
   ratioPercent: number;
-  grainType: { id: string; code: string; name: string; bagWeightGrams: number };
+  rawMaterialType: { id: string; code: string; name: string; bagWeightGrams: number };
 }
 
 export interface RecipeIngredient {
   id: string;
   recipeId: string;
-  grainTypeId: string;
+  rawMaterialTypeId: string;
   ratioPercent: number;
-  grainType: { id: string; code: string; name: string; bagWeightGrams: number };
+  rawMaterialType: { id: string; code: string; name: string; bagWeightGrams: number };
 }
 
 export interface Recipe {
@@ -71,13 +71,13 @@ export interface Variant {
   code: string;
   name: string;
   description: string | null;
-  standardGramsPerMeter: number;
+  standardConsumptionRatio: number;
   metersPerCarton: number | null;
   packagingMaterialId: string | null;
   recipeId: string | null;
-  grainTypeId: string | null;
+  rawMaterialTypeId: string | null;
   isActive: boolean;
-  grainType?: { id: string; code: string; name: string; bagWeightGrams: number } | null;
+  rawMaterialType?: { id: string; code: string; name: string; bagWeightGrams: number } | null;
   packagingMaterial?: {
     id: string;
     name: string;
@@ -88,7 +88,7 @@ export interface Variant {
   ingredients: VariantIngredient[];
 }
 
-export interface GrainType {
+export interface RawMaterialType {
   id: string;
   code: string;
   name: string;
@@ -136,7 +136,7 @@ export interface Vendor {
   contactName: string | null;
   phone: string | null;
   address: string | null;
-  grainTypes: string | null;
+  rawMaterialTypes: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -204,23 +204,23 @@ export const settingsApi = {
   createVariant: (data: {
     code: string;
     name: string;
-    standardGramsPerMeter: number;
+    standardConsumptionRatio: number;
     metersPerCarton?: number;
     packagingMaterialId?: string;
     recipeId?: string;
-    ingredients?: { grainTypeId: string; ratioPercent: number }[];
+    ingredients?: { rawMaterialTypeId: string; ratioPercent: number }[];
     description?: string;
   }) =>
     api.post<{ data: Variant }>('/settings/variants', data).then((r) => r.data),
   updateVariant: (id: string, data: {
     name?: string;
-    standardGramsPerMeter?: number;
+    standardConsumptionRatio?: number;
     metersPerCarton?: number | null;
     packagingMaterialId?: string | null;
     recipeId?: string | null;
     description?: string | null;
     isActive?: boolean;
-    ingredients?: { grainTypeId: string; ratioPercent: number }[];
+    ingredients?: { rawMaterialTypeId: string; ratioPercent: number }[];
   }) =>
     api.put<{ data: Variant }>(`/settings/variants/${id}`, data).then((r) => r.data),
 
@@ -230,23 +230,23 @@ export const settingsApi = {
   createRecipe: (data: {
     name: string;
     description?: string;
-    ingredients: { grainTypeId: string; ratioPercent: number }[];
+    ingredients: { rawMaterialTypeId: string; ratioPercent: number }[];
   }) =>
     api.post<{ data: Recipe }>('/settings/recipes', data).then((r) => r.data),
   updateRecipe: (id: string, data: {
     name?: string;
     description?: string;
     isActive?: boolean;
-    ingredients?: { grainTypeId: string; ratioPercent: number }[];
+    ingredients?: { rawMaterialTypeId: string; ratioPercent: number }[];
   }) =>
     api.put<{ data: Recipe }>(`/settings/recipes/${id}`, data).then((r) => r.data),
   deleteRecipe: (id: string) =>
     api.delete(`/settings/recipes/${id}`).then((r) => r.data),
 
-  // Grain Types
-  getGrainTypes: () =>
-    api.get<{ data: GrainType[] }>('/settings/grain-types').then((r) => r.data),
-  createGrainType: (data: {
+  // Raw Material Types
+  getRawMaterialTypes: () =>
+    api.get<{ data: RawMaterialType[] }>('/settings/grain-types').then((r) => r.data),
+  createRawMaterialType: (data: {
     code: string;
     name: string;
     bagWeightGrams: number;
@@ -254,11 +254,11 @@ export const settingsApi = {
     description?: string;
   }) =>
     api
-      .post<{ data: GrainType }>('/settings/grain-types', data)
+      .post<{ data: RawMaterialType }>('/settings/grain-types', data)
       .then((r) => r.data),
-  updateGrainType: (id: string, data: Partial<GrainType>) =>
+  updateRawMaterialType: (id: string, data: Partial<RawMaterialType>) =>
     api
-      .put<{ data: GrainType }>(`/settings/grain-types/${id}`, data)
+      .put<{ data: RawMaterialType }>(`/settings/grain-types/${id}`, data)
       .then((r) => r.data),
 
   // Plants & Machines
@@ -311,7 +311,7 @@ export const settingsApi = {
   // Vendors
   getVendors: (includeInactive = false) =>
     api.get<{ data: Vendor[] }>('/vendors', { params: { includeInactive } }).then((r) => r.data),
-  createVendor: (data: { name: string; contactName?: string; phone?: string; address?: string; grainTypes?: string }) =>
+  createVendor: (data: { name: string; contactName?: string; phone?: string; address?: string; rawMaterialTypes?: string }) =>
     api.post<{ data: Vendor }>('/vendors', data).then((r) => r.data),
   updateVendor: (id: string, data: Partial<Vendor>) =>
     api.put<{ data: Vendor }>(`/vendors/${id}`, data).then((r) => r.data),

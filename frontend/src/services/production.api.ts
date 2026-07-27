@@ -9,7 +9,7 @@ export interface EntityRef {
 }
 
 export interface VariantIngredientRef {
-  grainTypeName: string;
+  rawMaterialTypeName: string;
   ratioPercent: number;
 }
 
@@ -35,7 +35,7 @@ export interface MachineRef {
 }
 
 export interface RawMaterialConsumed {
-  grainType: string;
+  rawMaterialType: string;
   gramsConsumed: number;
   bagsConsumed: number;
 }
@@ -43,7 +43,7 @@ export interface RawMaterialConsumed {
 export interface ShiftVariant {
   id: string;
   variantId: string;
-  variant: VariantRef & { standardGramsPerMeter?: number; ingredients?: VariantIngredientRef[] };
+  variant: VariantRef & { standardConsumptionRatio?: number; ingredients?: VariantIngredientRef[] };
   metersProduced: number;
   gramsPerMeter: number | null;
   scrapWeightGrams: number;
@@ -99,7 +99,7 @@ export interface ProductionEntryCompleteResult {
   status: ProductionStatus;
   metersProduced: number;
   hasElectricityDiscrepancy: boolean;
-  rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number }[];
+  rawMaterialConsumed: { rawMaterialType: string; gramsConsumed: number; bagsConsumed: number }[];
   stockUpdates: { variantId: string; newStockMeters: number }[];
   version: number;
 }
@@ -221,7 +221,7 @@ export interface VariantLookup {
   id: string;
   code: string;
   name: string;
-  standardGramsPerMeter: number;
+  standardConsumptionRatio: number;
 }
 
 // ─── Filters ─────────────────────────────────────────────────────────────────

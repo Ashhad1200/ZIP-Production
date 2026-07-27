@@ -6,14 +6,14 @@ import { DataTable, type Column } from '../../components/ui/DataTable';
 import { Modal } from '../../components/ui/Modal';
 import { SearchableSelect, type SelectOption } from '../../components/forms/SearchableSelect';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
-import { settingsApi, type Variant, type GrainType, type Recipe } from '../../services/settings.api';
+import { settingsApi, type Variant, type RawMaterialType, type Recipe } from '../../services/settings.api';
 import { packagingApi } from '../../services/inventory.api';
 import { formatPaisaToRupees } from '../../utils/currency';
 
 // ─── Variant Form ───────────────────────────────────────────────────────────
 
 interface IngredientRow {
-  grainTypeId: string;
+  rawMaterialTypeId: string;
   ratioPercent: string; // string for input binding
 }
 
@@ -33,8 +33,8 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
   const [code, setCode] = useState(variant?.code ?? '');
   const [name, setName] = useState(variant?.name ?? '');
   const [description, setDescription] = useState(variant?.description ?? '');
-  const [standardGramsPerMeter, setStandardGramsPerMeter] = useState(
-    String(variant?.standardGramsPerMeter ?? ''),
+  const [standardConsumptionRatio, setStandardGramsPerMeter] = useState(
+    String(variant?.standardConsumptionRatio ?? ''),
   );
   const [metersPerCarton, setMetersPerCarton] = useState(
     variant?.metersPerCarton != null ? String(variant.metersPerCarton) : '',
@@ -49,19 +49,19 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
   const [ingredients, setIngredients] = useState<IngredientRow[]>(() => {
     if (variant?.ingredients && variant.ingredients.length > 0) {
       return variant.ingredients.map((i) => ({
-        grainTypeId: i.grainTypeId,
+        rawMaterialTypeId: i.rawMaterialTypeId,
         ratioPercent: String(i.ratioPercent),
       }));
     }
-    if (variant?.grainTypeId) {
-      return [{ grainTypeId: variant.grainTypeId, ratioPercent: '100' }];
+    if (variant?.rawMaterialTypeId) {
+      return [{ rawMaterialTypeId: variant.rawMaterialTypeId, ratioPercent: '100' }];
     }
-    return [{ grainTypeId: '', ratioPercent: '100' }];
+    return [{ rawMaterialTypeId: '', ratioPercent: '100' }];
   });
 
   const recipeOptions: SelectOption[] = recipes.filter((r) => r.isActive).map((r) => ({
     value: r.id,
-    label: `${r.name} — ${r.ingredients.map((i) => `${i.grainType.code} ${Number(i.ratioPercent)}%`).join(' + ')}`,
+    label: `${r.name} — ${r.ingredients.map((i) => `${i.rawMaterialType.code} ${Number(i.ratioPercent)}%`).join(' + ')}`,
   }));
 
   const handleRecipeChange = (recipeId: string) => {
@@ -70,7 +70,7 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
       const recipe = recipes.find((r) => r.id === recipeId);
       if (recipe) {
         setIngredients(recipe.ingredients.map((i) => ({
-          grainTypeId: i.grainTypeId,
+          rawMaterialTypeId: i.rawMaterialTypeId,
           ratioPercent: String(Number(i.ratioPercent)),
         })));
       }
@@ -81,7 +81,7 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const addIngredient = () =>
-    setIngredients((prev) => [...prev, { grainTypeId: '', ratioPercent: '' }]);
+    setIngredients((prev) => [...prev, { rawMaterialTypeId: '', ratioPercent: '' }]);
 
   const removeIngredient = (idx: number) =>
     setIngredients((prev) => prev.filter((_, i) => i !== idx));
@@ -95,26 +95,26 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
     const errs: Record<string, string> = {};
     if (!code.trim()) errs.code = 'Code is required';
     if (!name.trim()) errs.name = 'Name is required';
-    const gpm = Number(standardGramsPerMeter);
-    if (isNaN(gpm) || gpm <= 0) errs.standardGramsPerMeter = 'Must be a positive number';
+    const gpm = Number(standardConsumptionRatio);
+    if (isNaN(gpm) || gpm <= 0) errs.standardConsumptionRatio = 'Must be a positive number';
     if (ingredients.length === 0) errs.ingredients = 'At least one seed ingredient is required';
-    if (ingredients.some((i) => !i.grainTypeId)) errs.ingredients = 'Select a seed for every ingredient row';
-    const uniqueGrains = new Set(ingredients.map((i) => i.grainTypeId));
+    if (ingredients.some((i) => !i.rawMaterialTypeId)) errs.ingredients = 'Select a seed for every ingredient row';
+    const uniqueGrains = new Set(ingredients.map((i) => i.rawMaterialTypeId));
     if (uniqueGrains.size < ingredients.length) errs.ingredients = 'Each seed type can only appear once';
     if (Math.abs(totalRatio - 100) > 0.01) errs.ingredients = `Ratios must sum to 100% (currently ${totalRatio.toFixed(1)}%)`;
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [code, name, standardGramsPerMeter, ingredients, totalRatio]);
+  }, [code, name, standardConsumptionRatio, ingredients, totalRatio]);
 
   const parsedIngredients = () =>
-    ingredients.map((i) => ({ grainTypeId: i.grainTypeId, ratioPercent: Number(i.ratioPercent) }));
+    ingredients.map((i) => ({ rawMaterialTypeId: i.rawMaterialTypeId, ratioPercent: Number(i.ratioPercent) }));
 
   const createMutation = useMutation({
     mutationFn: () =>
       settingsApi.createVariant({
         code: code.trim(),
         name: name.trim(),
-        standardGramsPerMeter: Number(standardGramsPerMeter),
+        standardConsumptionRatio: Number(standardConsumptionRatio),
         metersPerCarton: metersPerCarton ? Number(metersPerCarton) : undefined,
         packagingMaterialId: packagingMaterialId || undefined,
         recipeId: selectedRecipeId || undefined,
@@ -135,7 +135,7 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
     mutationFn: () =>
       settingsApi.updateVariant(variant!.id, {
         name: name.trim(),
-        standardGramsPerMeter: Number(standardGramsPerMeter),
+        standardConsumptionRatio: Number(standardConsumptionRatio),
         metersPerCarton: metersPerCarton ? Number(metersPerCarton) : null,
         packagingMaterialId: packagingMaterialId || null,
         recipeId: selectedRecipeId || null,
@@ -202,13 +202,13 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
           <input
             type="number"
             step="0.01"
-            value={standardGramsPerMeter}
+            value={standardConsumptionRatio}
             onChange={(e) => setStandardGramsPerMeter(e.target.value)}
-            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.standardGramsPerMeter ? 'border-red-400' : 'border-gray-300'}`}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.standardConsumptionRatio ? 'border-red-400' : 'border-gray-300'}`}
             placeholder="e.g. 45.5"
           />
-          {errors.standardGramsPerMeter && (
-            <p className="mt-1 text-xs text-red-600">{errors.standardGramsPerMeter}</p>
+          {errors.standardConsumptionRatio && (
+            <p className="mt-1 text-xs text-red-600">{errors.standardConsumptionRatio}</p>
           )}
         </div>
 
@@ -286,8 +286,8 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
                   <SearchableSelect
                     label=""
                     options={grainOptions}
-                    value={row.grainTypeId}
-                    onChange={(v) => updateIngredient(idx, 'grainTypeId', v)}
+                    value={row.rawMaterialTypeId}
+                    onChange={(v) => updateIngredient(idx, 'rawMaterialTypeId', v)}
                     placeholder="Select seed type"
                     disabled={usingRecipe}
                   />
@@ -363,15 +363,15 @@ function VariantFormModal({ variant, grainOptions, packagingOptions, recipes, on
   );
 }
 
-// ─── Grain Type Form ────────────────────────────────────────────────────────
+// ─── Raw Material Type Form ────────────────────────────────────────────────────────
 
 interface GrainFormProps {
-  grain?: GrainType | null;
+  grain?: RawMaterialType | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function GrainTypeFormModal({ grain, onClose, onSuccess }: GrainFormProps) {
+function RawMaterialTypeFormModal({ grain, onClose, onSuccess }: GrainFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!grain;
 
@@ -402,7 +402,7 @@ function GrainTypeFormModal({ grain, onClose, onSuccess }: GrainFormProps) {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      settingsApi.createGrainType({
+      settingsApi.createRawMaterialType({
         code: code.trim(),
         name: name.trim(),
         bagWeightGrams: Number(bagWeightGrams),
@@ -423,7 +423,7 @@ function GrainTypeFormModal({ grain, onClose, onSuccess }: GrainFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: () =>
-      settingsApi.updateGrainType(grain!.id, {
+      settingsApi.updateRawMaterialType(grain!.id, {
         code: code.trim(),
         name: name.trim(),
         bagWeightGrams: Number(bagWeightGrams),
@@ -455,7 +455,7 @@ function GrainTypeFormModal({ grain, onClose, onSuccess }: GrainFormProps) {
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? 'Edit Grain Type' : 'Create Grain Type'}
+      title={isEdit ? 'Edit Raw Material Type' : 'Create Raw Material Type'}
       size="md"
     >
       {toast && (
@@ -578,7 +578,7 @@ export function VariantGrainManagement() {
 
   // Grain state
   const [showGrainForm, setShowGrainForm] = useState(false);
-  const [editGrain, setEditGrain] = useState<GrainType | null>(null);
+  const [editGrain, setEditGrain] = useState<RawMaterialType | null>(null);
 
   const { data: variantsResp, isLoading: loadingVariants } = useQuery({
     queryKey: ['settings-variants'],
@@ -587,7 +587,7 @@ export function VariantGrainManagement() {
 
   const { data: grainsResp, isLoading: loadingGrains } = useQuery({
     queryKey: ['settings-grain-types'],
-    queryFn: settingsApi.getGrainTypes,
+    queryFn: settingsApi.getRawMaterialTypes,
   });
 
   const { data: packagingResp, isLoading: loadingPackaging } = useQuery({
@@ -601,11 +601,11 @@ export function VariantGrainManagement() {
   });
 
   const variants = variantsResp?.data ?? [];
-  const grainTypes = grainsResp?.data ?? [];
+  const rawMaterialTypes = grainsResp?.data ?? [];
   const packagingMaterials = packagingResp?.data ?? [];
   const recipes = recipesResp?.data ?? [];
 
-  const grainOptions: SelectOption[] = grainTypes.map((g) => ({
+  const grainOptions: SelectOption[] = rawMaterialTypes.map((g) => ({
     value: g.id,
     label: `${g.code} – ${g.name}`,
   }));
@@ -620,13 +620,13 @@ export function VariantGrainManagement() {
     { key: 'code', header: 'Code', sortable: true },
     { key: 'name', header: 'Name', sortable: true },
     {
-      key: 'standardGramsPerMeter',
+      key: 'standardConsumptionRatio',
       header: 'g/m',
       sortable: true,
-      render: (row) => Number(row.standardGramsPerMeter).toFixed(2),
+      render: (row) => Number(row.standardConsumptionRatio).toFixed(2),
     },
     {
-      key: 'grainType',
+      key: 'rawMaterialType',
       header: 'Seed Mix',
       hideOnMobile: true,
       render: (row) => {
@@ -639,12 +639,12 @@ export function VariantGrainManagement() {
                 </span>
               )}
               <div className="text-xs text-gray-700">
-                {row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')}
+                {row.ingredients.map((i) => `${i.rawMaterialType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')}
               </div>
             </div>
           );
         }
-        return row.grainType ? `${row.grainType.code} – ${row.grainType.name}` : '—';
+        return row.rawMaterialType ? `${row.rawMaterialType.code} – ${row.rawMaterialType.name}` : '—';
       },
     },
     {
@@ -699,11 +699,11 @@ export function VariantGrainManagement() {
         </button>
       </div>
       <div className="flex gap-3 text-xs text-gray-500">
-        <span>{Number(row.standardGramsPerMeter).toFixed(2)} g/m</span>
+        <span>{Number(row.standardConsumptionRatio).toFixed(2)} g/m</span>
         <span>
           {row.ingredients && row.ingredients.length > 0
-            ? row.ingredients.map((i) => `${i.grainType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')
-            : row.grainType?.name ?? '—'}
+            ? row.ingredients.map((i) => `${i.rawMaterialType.name} ${Number(i.ratioPercent).toFixed(0)}%`).join(' + ')
+            : row.rawMaterialType?.name ?? '—'}
         </span>
       </div>
       {row.packagingMaterial && (
@@ -714,8 +714,8 @@ export function VariantGrainManagement() {
     </div>
   );
 
-  // ── Grain Type columns ──────────────────────────────────────────────────
-  const grainColumns: Column<GrainType>[] = [
+  // ── Raw Material Type columns ──────────────────────────────────────────────────
+  const grainColumns: Column<RawMaterialType>[] = [
     { key: 'code', header: 'Code', sortable: true },
     { key: 'name', header: 'Name', sortable: true },
     {
@@ -762,7 +762,7 @@ export function VariantGrainManagement() {
     },
   ];
 
-  const grainMobileCard = (row: GrainType) => (
+  const grainMobileCard = (row: RawMaterialType) => (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-900">
@@ -807,10 +807,10 @@ export function VariantGrainManagement() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
-              Variants & Grain Types
+              Variants & Raw Material Types
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              Manage product variants and grain type definitions
+              Manage product variants and raw material type definitions
             </p>
           </div>
         </div>
@@ -823,7 +823,7 @@ export function VariantGrainManagement() {
           className="flex min-h-[44px] items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
           <Plus size={16} />
-          {activeTab === 'variants' ? 'Add Variant' : 'Add Grain Type'}
+          {activeTab === 'variants' ? 'Add Variant' : 'Add Raw Material Type'}
         </button>
       </div>
 
@@ -847,7 +847,7 @@ export function VariantGrainManagement() {
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          Grain Types ({grainTypes.length})
+          Raw Material Types ({rawMaterialTypes.length})
         </button>
       </div>
 
@@ -865,11 +865,11 @@ export function VariantGrainManagement() {
         ) : (
           <DataTable
             columns={grainColumns}
-            data={grainTypes}
+            data={rawMaterialTypes}
             isLoading={loadingGrains}
             keyExtractor={(row) => row.id}
             mobileCard={grainMobileCard}
-            emptyMessage="No grain types configured"
+            emptyMessage="No raw material types configured"
           />
         )}
       </div>
@@ -895,15 +895,15 @@ export function VariantGrainManagement() {
         />
       )}
 
-      {/* Grain Type modals */}
+      {/* Raw Material Type modals */}
       {showGrainForm && (
-        <GrainTypeFormModal
+        <RawMaterialTypeFormModal
           onClose={() => setShowGrainForm(false)}
           onSuccess={() => setShowGrainForm(false)}
         />
       )}
       {editGrain && (
-        <GrainTypeFormModal
+        <RawMaterialTypeFormModal
           grain={editGrain}
           onClose={() => setEditGrain(null)}
           onSuccess={() => setEditGrain(null)}

@@ -92,7 +92,7 @@ export class ProductionService {
 
       // Verify all variants exist
       for (const v of variantInputs) {
-        const variant = await tx.zipperVariant.findUnique({ where: { id: v.variantId } });
+        const variant = await tx.productVariant.findUnique({ where: { id: v.variantId } });
         if (!variant) {
           throw Object.assign(new Error(`Variant not found: ${v.variantId}`), { statusCode: 404, code: 'VARIANT_NOT_FOUND' });
         }
@@ -145,7 +145,7 @@ export class ProductionService {
 
       const shiftVariants = await tx.productionShiftVariant.findMany({
         where: { entryId: entry.id },
-        include: { variant: { select: { id: true, code: true, name: true, standardGramsPerMeter: true } } },
+        include: { variant: { select: { id: true, code: true, name: true, standardConsumptionRatio: true } } },
       });
 
       await auditService.log({
@@ -166,7 +166,7 @@ export class ProductionService {
         shiftVariants: shiftVariants.map((sv) => ({
           id: sv.id,
           variantId: sv.variantId,
-          variant: { ...sv.variant, standardGramsPerMeter: Number(sv.variant.standardGramsPerMeter) },
+          variant: { ...sv.variant, standardConsumptionRatio: Number(sv.variant.standardConsumptionRatio) },
           metersProduced: sv.metersProduced,
           gramsPerMeter: sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : null,
           scrapWeightGrams: sv.scrapWeightGrams,
@@ -194,9 +194,9 @@ export class ProductionService {
             include: {
               variant: {
                 include: {
-                  grainType: true,
+                  rawMaterialType: true,
                   packagingMaterial: true,
-                  ingredients: { include: { grainType: true } },
+                  ingredients: { include: { rawMaterialType: true } },
                 },
               },
             },
@@ -249,7 +249,7 @@ export class ProductionService {
 
       let totalMetersProduced = 0;
       const stockUpdates: { variantId: string; newStockMeters: number }[] = [];
-      const rawMaterialConsumed: { grainType: string; gramsConsumed: number; bagsConsumed: number }[] = [];
+      const rawMaterialConsumed: { rawMaterialType: string; gramsConsumed: number; bagsConsumed: number }[] = [];
 
       // Process each variant: raw material deduction + FG stock + FIFO
       for (const vc of variantCompletions) {
@@ -268,21 +268,21 @@ export class ProductionService {
           vc.gramsPerMeter,
           vc.metersProduced,
           // Use primary grain's bagWeightGrams for total calc (or first ingredient's if no primary)
-          (variant.grainType ?? variant.ingredients[0]?.grainType)?.bagWeightGrams ?? 25000
+          (variant.rawMaterialType ?? variant.ingredients[0]?.rawMaterialType)?.bagWeightGrams ?? 25000
         );
 
         // Resolve the list of ingredients (handles both legacy single-grain and new multi-seed)
-        type IngredientEntry = { grainTypeId: string; grainType: { name: string; bagWeightGrams: number }; ratioPercent: number };
+        type IngredientEntry = { rawMaterialTypeId: string; rawMaterialType: { name: string; bagWeightGrams: number }; ratioPercent: number };
         let ingredientList: IngredientEntry[];
         if (variant.ingredients && variant.ingredients.length > 0) {
           ingredientList = variant.ingredients.map((ing) => ({
-            grainTypeId: ing.grainTypeId,
-            grainType: ing.grainType,
+            rawMaterialTypeId: ing.rawMaterialTypeId,
+            rawMaterialType: ing.rawMaterialType,
             ratioPercent: Number(ing.ratioPercent),
           }));
-        } else if (variant.grainTypeId && variant.grainType) {
+        } else if (variant.rawMaterialTypeId && variant.rawMaterialType) {
           // Legacy: single grain at 100%
-          ingredientList = [{ grainTypeId: variant.grainTypeId, grainType: variant.grainType, ratioPercent: 100 }];
+          ingredientList = [{ rawMaterialTypeId: variant.rawMaterialTypeId, rawMaterialType: variant.rawMaterialType, ratioPercent: 100 }];
         } else {
           throw Object.assign(
             new Error(`Variant ${variant.code} has no grain ingredients configured`),
@@ -294,16 +294,16 @@ export class ProductionService {
         for (const ing of ingredientList) {
           const ratio = ing.ratioPercent / 100;
           const ingGramsConsumed = gramsConsumed * ratio;
-          const ingBagsConsumed = ingGramsConsumed / ing.grainType.bagWeightGrams;
+          const ingBagsConsumed = ingGramsConsumed / ing.rawMaterialType.bagWeightGrams;
 
           // Deduct raw material stock
           const rawMaterialStock = await tx.rawMaterialStock.findUnique({
-            where: { grainTypeId: ing.grainTypeId },
+            where: { rawMaterialTypeId: ing.rawMaterialTypeId },
           });
 
           if (!rawMaterialStock) {
             throw Object.assign(
-              new Error(`No raw material stock for grain type ${ing.grainType.name}`),
+              new Error(`No raw material stock for raw material type ${ing.rawMaterialType.name}`),
               { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
             );
           }
@@ -311,7 +311,7 @@ export class ProductionService {
           const currentBags = Number(rawMaterialStock.currentBags);
           if (currentBags < ingBagsConsumed) {
             throw Object.assign(
-              new Error(`Insufficient stock for ${ing.grainType.name}. Available: ${currentBags.toFixed(4)} bags, Required: ${ingBagsConsumed.toFixed(4)} bags`),
+              new Error(`Insufficient stock for ${ing.rawMaterialType.name}. Available: ${currentBags.toFixed(4)} bags, Required: ${ingBagsConsumed.toFixed(4)} bags`),
               { statusCode: 422, code: 'INSUFFICIENT_RAW_MATERIAL' }
             );
           }
@@ -321,10 +321,10 @@ export class ProductionService {
             data: { currentBags: new Prisma.Decimal(currentBags - ingBagsConsumed), updatedBy: userId },
           });
 
-          // FIFO batch deduction for this ingredient's grain type
+          // FIFO batch deduction for this ingredient's raw material type
           try {
             const fifoResult = await inventoryService.deductFifoBatches(
-              ing.grainTypeId,
+              ing.rawMaterialTypeId,
               ingBagsConsumed,
               userId,
               tx
@@ -345,8 +345,8 @@ export class ProductionService {
             // FIFO deduction is best-effort; skip if no batches exist
           }
 
-          rawMaterialConsumed.push({ grainType: ing.grainType.name, gramsConsumed: ingGramsConsumed, bagsConsumed: ingBagsConsumed });
-          await inventoryService.checkAndNotifyLowStock('raw_material', ing.grainTypeId);
+          rawMaterialConsumed.push({ rawMaterialType: ing.rawMaterialType.name, gramsConsumed: ingGramsConsumed, bagsConsumed: ingBagsConsumed });
+          await inventoryService.checkAndNotifyLowStock('raw_material', ing.rawMaterialTypeId);
         }
 
         // Update finished goods stock for this variant
@@ -523,12 +523,12 @@ export class ProductionService {
                 id: true,
                 code: true,
                 name: true,
-                standardGramsPerMeter: true,
-                grainType: { select: { id: true, name: true, bagWeightGrams: true } },
+                standardConsumptionRatio: true,
+                rawMaterialType: { select: { id: true, name: true, bagWeightGrams: true } },
                 ingredients: {
                   select: {
                     ratioPercent: true,
-                    grainType: { select: { id: true, name: true, bagWeightGrams: true } },
+                    rawMaterialType: { select: { id: true, name: true, bagWeightGrams: true } },
                   },
                   orderBy: { ratioPercent: 'desc' },
                 },
@@ -558,10 +558,10 @@ export class ProductionService {
           id: sv.variant.id,
           code: sv.variant.code,
           name: sv.variant.name,
-          standardGramsPerMeter: Number(sv.variant.standardGramsPerMeter),
-          grainType: sv.variant.grainType,
+          standardConsumptionRatio: Number(sv.variant.standardConsumptionRatio),
+          rawMaterialType: sv.variant.rawMaterialType,
           ingredients: sv.variant.ingredients.map((i) => ({
-            grainTypeName: i.grainType.name,
+            rawMaterialTypeName: i.rawMaterialType.name,
             ratioPercent: Number(i.ratioPercent),
           })),
         },
@@ -631,7 +631,7 @@ export class ProductionService {
                 select: {
                   id: true, code: true, name: true,
                   ingredients: {
-                    select: { ratioPercent: true, grainType: { select: { name: true } } },
+                    select: { ratioPercent: true, rawMaterialType: { select: { name: true } } },
                     orderBy: { ratioPercent: 'desc' },
                   },
                 },
@@ -659,7 +659,7 @@ export class ProductionService {
           code: sv.variant.code,
           name: sv.variant.name,
           ingredients: sv.variant.ingredients.map((i) => ({
-            grainTypeName: i.grainType.name,
+            rawMaterialTypeName: i.rawMaterialType.name,
             ratioPercent: Number(i.ratioPercent),
           })),
         },
@@ -695,8 +695,8 @@ export class ProductionService {
             include: {
               variant: {
                 include: {
-                  grainType: true,
-                  ingredients: { include: { grainType: true } },
+                  rawMaterialType: true,
+                  ingredients: { include: { rawMaterialType: true } },
                 },
               },
             },
@@ -732,7 +732,7 @@ export class ProductionService {
         const oldGramsPerMeter = sv.gramsPerMeter != null ? Number(sv.gramsPerMeter) : 0;
         const newGramsPerMeter = input.gramsPerMeter ?? oldGramsPerMeter;
 
-        const primaryGrain = sv.variant.ingredients[0]?.grainType ?? sv.variant.grainType;
+        const primaryGrain = sv.variant.ingredients[0]?.rawMaterialType ?? sv.variant.rawMaterialType;
         if (!primaryGrain) throw Object.assign(new Error('Variant has no grain configured'), { statusCode: 422 });
 
         const oldConsumption = calculateRawMaterialConsumption(oldGramsPerMeter, oldMeters, primaryGrain.bagWeightGrams);
@@ -744,12 +744,12 @@ export class ProductionService {
         if (Math.abs(bagsDiff) > 0.0001) {
           // Adjust all ingredient stocks proportionally
           const ingredientList = sv.variant.ingredients.length > 0
-            ? sv.variant.ingredients.map((ing) => ({ grainTypeId: ing.grainTypeId, ratioPercent: Number(ing.ratioPercent) }))
-            : [{ grainTypeId: sv.variant.grainTypeId!, ratioPercent: 100 }];
+            ? sv.variant.ingredients.map((ing) => ({ rawMaterialTypeId: ing.rawMaterialTypeId, ratioPercent: Number(ing.ratioPercent) }))
+            : [{ rawMaterialTypeId: sv.variant.rawMaterialTypeId!, ratioPercent: 100 }];
 
           for (const ing of ingredientList) {
             const ingBagsDiff = bagsDiff * (ing.ratioPercent / 100);
-            const rawMaterialStock = await tx.rawMaterialStock.findUnique({ where: { grainTypeId: ing.grainTypeId } });
+            const rawMaterialStock = await tx.rawMaterialStock.findUnique({ where: { rawMaterialTypeId: ing.rawMaterialTypeId } });
             if (rawMaterialStock) {
               const newBags = Number(rawMaterialStock.currentBags) - ingBagsDiff;
               if (newBags < 0) {
@@ -1230,12 +1230,12 @@ export class ProductionService {
   }
 
   /**
-   * Lookup: list active zipper variants.
+   * Lookup: list active product variants.
    */
   async getVariants() {
-    return prisma.zipperVariant.findMany({
+    return prisma.productVariant.findMany({
       where: { isActive: true, isDeleted: false },
-      select: { id: true, code: true, name: true, standardGramsPerMeter: true },
+      select: { id: true, code: true, name: true, standardConsumptionRatio: true },
       orderBy: { code: 'asc' },
     });
   }

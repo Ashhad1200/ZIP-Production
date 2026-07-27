@@ -45,10 +45,10 @@ export function RawMaterialStock() {
   // ── Table columns ────────────────────────────────────────────────────────
   const columns: Column<RawMaterialStockItem>[] = [
     {
-      key: 'grainType',
-      header: 'Grain Type',
+      key: 'rawMaterialType',
+      header: 'Raw Material Type',
       sortable: true,
-      render: (row) => row.grainType.name,
+      render: (row) => row.rawMaterialType.name,
     },
     {
       key: 'currentBags',
@@ -84,7 +84,7 @@ export function RawMaterialStock() {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-900">
-          {row.grainType.name}
+          {row.rawMaterialType.name}
         </span>
         {stockBadge(row)}
       </div>

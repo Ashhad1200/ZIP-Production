@@ -21,7 +21,7 @@ export class VendorService {
       contactName: v.contactName,
       phone: v.phone,
       address: v.address,
-      grainTypes: v.grainTypes,
+      rawMaterialTypes: v.rawMaterialTypes,
       isActive: v.isActive,
       createdAt: v.createdAt.toISOString(),
     }));
@@ -41,7 +41,7 @@ export class VendorService {
       contactName: vendor.contactName,
       phone: vendor.phone,
       address: vendor.address,
-      grainTypes: vendor.grainTypes,
+      rawMaterialTypes: vendor.rawMaterialTypes,
       isActive: vendor.isActive,
       purchaseCount,
       createdAt: vendor.createdAt.toISOString(),
@@ -49,7 +49,7 @@ export class VendorService {
   }
 
   async create(
-    input: { name: string; contactName?: string; phone?: string; address?: string; grainTypes?: string },
+    input: { name: string; contactName?: string; phone?: string; address?: string; rawMaterialTypes?: string },
     userId: string
   ) {
     const existing = await prisma.vendor.findFirst({ where: { name: input.name.trim(), isDeleted: false } });
@@ -61,7 +61,7 @@ export class VendorService {
         contactName: input.contactName?.trim() || null,
         phone: input.phone?.trim() || null,
         address: input.address?.trim() || null,
-        grainTypes: input.grainTypes?.trim() || null,
+        rawMaterialTypes: input.rawMaterialTypes?.trim() || null,
         isActive: true,
         createdBy: userId,
         updatedBy: userId,
@@ -73,7 +73,7 @@ export class VendorService {
       entityId: vendor.id,
       action: AuditAction.CREATE,
       newValue: { name: vendor.name, contactName: vendor.contactName },
-      changedFields: ['name', 'contactName', 'phone', 'address', 'grainTypes'],
+      changedFields: ['name', 'contactName', 'phone', 'address', 'rawMaterialTypes'],
       userId,
     });
 
@@ -82,7 +82,7 @@ export class VendorService {
 
   async update(
     id: string,
-    input: { name?: string; contactName?: string; phone?: string; address?: string; grainTypes?: string; isActive?: boolean },
+    input: { name?: string; contactName?: string; phone?: string; address?: string; rawMaterialTypes?: string; isActive?: boolean },
     userId: string
   ) {
     const existing = await prisma.vendor.findFirst({ where: { id, isDeleted: false } });
@@ -100,7 +100,7 @@ export class VendorService {
         ...(input.contactName !== undefined ? { contactName: input.contactName?.trim() || null } : {}),
         ...(input.phone !== undefined ? { phone: input.phone?.trim() || null } : {}),
         ...(input.address !== undefined ? { address: input.address?.trim() || null } : {}),
-        ...(input.grainTypes !== undefined ? { grainTypes: input.grainTypes?.trim() || null } : {}),
+        ...(input.rawMaterialTypes !== undefined ? { rawMaterialTypes: input.rawMaterialTypes?.trim() || null } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         updatedBy: userId,
         version: { increment: 1 },

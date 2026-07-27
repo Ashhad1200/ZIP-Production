@@ -3,9 +3,10 @@ import { authService } from '../services/auth.service';
 import { AuthenticatedRequest } from '../types';
 
 export class AuthController {
-  async getUsers(_req: Request, res: Response, next: NextFunction) {
+  async getUsers(req: Request, res: Response, next: NextFunction) {
     try {
-      const users = await authService.getActiveUsers();
+      const organizationSlug = typeof req.query.org === 'string' ? req.query.org : undefined;
+      const users = await authService.getActiveUsers(organizationSlug);
       res.json({ data: users });
     } catch (error) {
       next(error);

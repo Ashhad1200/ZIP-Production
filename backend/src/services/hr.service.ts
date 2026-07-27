@@ -10,10 +10,15 @@ const SALARY_EXPENSE_ACCOUNT_CODE = '5050';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function ensureSalaryAccount(userId: string): Promise<string> {
-  let account = await prisma.account.findUnique({ where: { code: SALARY_EXPENSE_ACCOUNT_CODE } });
+async function ensureSalaryAccount(_userId: string): Promise<string> {
+  // findFirst (not findUnique) so the tenant-scoping extension can inject
+  // organizationId — code alone is no longer globally unique (Phase 2).
+  let account = await prisma.account.findFirst({ where: { code: SALARY_EXPENSE_ACCOUNT_CODE } });
   if (!account) {
-    const parent = await prisma.account.findUnique({ where: { code: '5000' } });
+    const parent = await prisma.account.findFirst({ where: { code: '5000' } });
+    // Note: the Account model has no createdBy/audit fields (unlike most
+    // other models) — this was already the case before Phase 2, not a
+    // regression introduced here.
     account = await prisma.account.create({
       data: {
         code: SALARY_EXPENSE_ACCOUNT_CODE,
@@ -21,7 +26,6 @@ async function ensureSalaryAccount(userId: string): Promise<string> {
         accountType: 'EXPENSE',
         isGroup: false,
         parentId: parent?.id ?? null,
-        createdBy: userId,
       },
     });
   }
@@ -29,7 +33,7 @@ async function ensureSalaryAccount(userId: string): Promise<string> {
 }
 
 async function getCashAccountId(): Promise<string> {
-  const account = await prisma.account.findUnique({ where: { code: '1100' } });
+  const account = await prisma.account.findFirst({ where: { code: '1100' } });
   if (!account) throw Object.assign(new Error('Cash account (1100) not found'), { statusCode: 500, code: 'ACCOUNT_NOT_FOUND' });
   return account.id;
 }

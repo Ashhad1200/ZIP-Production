@@ -7,6 +7,7 @@ export interface AuthenticatedRequest extends Request {
     userId: string;
     role: Role;
     name: string;
+    organizationId: string | null;
   };
 }
 
@@ -79,6 +80,7 @@ export interface JwtPayload {
   userId: string;
   role: Role;
   name: string;
+  organizationId: string | null;
   iat?: number;
   exp?: number;
 }

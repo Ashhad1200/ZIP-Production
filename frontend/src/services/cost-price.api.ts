@@ -10,8 +10,8 @@ interface PaginatedMeta {
 }
 
 export interface IngredientCostBreakdown {
-  grainTypeName: string;
-  grainTypeCode: string;
+  rawMaterialTypeName: string;
+  rawMaterialTypeCode: string;
   standardRatioPercent: number;
   actualBagsConsumed: number;
   actualCostPaisa: number;
@@ -19,7 +19,7 @@ export interface IngredientCostBreakdown {
 }
 
 export interface RecipeInfo {
-  ingredients: { grainTypeName: string; grainTypeCode: string; ratioPercent: number }[];
+  ingredients: { rawMaterialTypeName: string; rawMaterialTypeCode: string; ratioPercent: number }[];
 }
 
 export interface ShiftCostBreakdown {

@@ -7,6 +7,7 @@
  */
 
 import prisma from '../config/database';
+import { getCurrentOrganizationId } from '../config/tenant-context';
 import { formatPaisaToRupees } from '../utils/currency';
 
 export interface MonthlyOverheadInput {
@@ -102,27 +103,36 @@ export class MonthlyOverheadService {
       notes: input.notes ?? null,
     };
 
-    const record = await prisma.monthlyOverhead.upsert({
-      where: { year_month: { year: input.year, month: input.month } },
-      update: data,
-      create: { year: input.year, month: input.month, ...data },
+    // Manual find-then-write instead of .upsert(): Prisma's generated
+    // compound-unique input for organizationId_year_month requires a
+    // non-null string, but organizationId is nullable (legacy/default tenant).
+    const organizationId = getCurrentOrganizationId();
+    const existing = await prisma.monthlyOverhead.findFirst({
+      where: { year: input.year, month: input.month, organizationId },
     });
+    const record = existing
+      ? await prisma.monthlyOverhead.update({ where: { id: existing.id }, data })
+      : await prisma.monthlyOverhead.create({ data: { year: input.year, month: input.month, organizationId, ...data } });
 
     return toDisplay(record);
   }
 
   /** Get overhead record for a specific month/year */
   async getForMonth(year: number, month: number): Promise<MonthlyOverheadDisplay | null> {
-    const record = await prisma.monthlyOverhead.findUnique({
-      where: { year_month: { year, month } },
+    // findFirst (not findUnique) so the tenant-scoping extension can inject
+    // organizationId — {year, month} alone is no longer globally unique (Phase 2).
+    const record = await prisma.monthlyOverhead.findFirst({
+      where: { year, month },
     });
     return record ? toDisplay(record) : null;
   }
 
   /** Get raw BigInt totals for a month (for cost calculation) */
   async getTotalPaisaForMonth(year: number, month: number): Promise<bigint> {
-    const record = await prisma.monthlyOverhead.findUnique({
-      where: { year_month: { year, month } },
+    // findFirst (not findUnique) so the tenant-scoping extension can inject
+    // organizationId — {year, month} alone is no longer globally unique (Phase 2).
+    const record = await prisma.monthlyOverhead.findFirst({
+      where: { year, month },
     });
     if (!record) return 0n;
     return (
@@ -136,8 +146,10 @@ export class MonthlyOverheadService {
 
   /** Get raw breakdown for a month (for cost calculation) */
   async getBreakdownForMonth(year: number, month: number) {
-    const record = await prisma.monthlyOverhead.findUnique({
-      where: { year_month: { year, month } },
+    // findFirst (not findUnique) so the tenant-scoping extension can inject
+    // organizationId — {year, month} alone is no longer globally unique (Phase 2).
+    const record = await prisma.monthlyOverhead.findFirst({
+      where: { year, month },
     });
     if (!record) {
       return {

@@ -28,11 +28,11 @@ export class InventoryController {
 
   async listPurchases(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { page, limit, grainTypeId, source, dateFrom, dateTo } = req.query;
+      const { page, limit, rawMaterialTypeId, source, dateFrom, dateTo } = req.query;
       const result = await inventoryService.listPurchases({
         page: parseInt(page as string) || 1,
         limit: Math.min(100, Math.max(1, parseInt(limit as string) || 20)),
-        grainTypeId: grainTypeId as string | undefined,
+        rawMaterialTypeId: rawMaterialTypeId as string | undefined,
         source: source as PurchaseSource | undefined,
         dateFrom: dateFrom as string | undefined,
         dateTo: dateTo as string | undefined,
@@ -45,20 +45,20 @@ export class InventoryController {
 
   async recordPurchase(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { grainTypeId, vendorId, numberOfBags, ratePerBagPaisa, purchaseDate, source } = req.body;
+      const { rawMaterialTypeId, vendorId, numberOfBags, ratePerBagPaisa, purchaseDate, source } = req.body;
 
-      if (!grainTypeId || numberOfBags == null || ratePerBagPaisa == null || !purchaseDate || !source) {
+      if (!rawMaterialTypeId || numberOfBags == null || ratePerBagPaisa == null || !purchaseDate || !source) {
         res.status(422).json({
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Missing required fields: grainTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source',
+            message: 'Missing required fields: rawMaterialTypeId, numberOfBags, ratePerBagPaisa, purchaseDate, source',
           },
         });
         return;
       }
 
       const result = await inventoryService.recordPurchase(
-        { grainTypeId, vendorId: vendorId || undefined, numberOfBags, ratePerBagPaisa, purchaseDate, source },
+        { rawMaterialTypeId, vendorId: vendorId || undefined, numberOfBags, ratePerBagPaisa, purchaseDate, source },
         req.user!.userId
       );
 
@@ -70,10 +70,10 @@ export class InventoryController {
 
   async getConsumptionReport(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { period, grainTypeId, dateFrom, dateTo } = req.query;
+      const { period, rawMaterialTypeId, dateFrom, dateTo } = req.query;
       const result = await inventoryService.getConsumptionReport({
         period: period as string | undefined,
-        grainTypeId: grainTypeId as string | undefined,
+        rawMaterialTypeId: rawMaterialTypeId as string | undefined,
         dateFrom: dateFrom as string | undefined,
         dateTo: dateTo as string | undefined,
       });
@@ -133,9 +133,9 @@ export class InventoryController {
 
   async listBatches(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { grainTypeId, includeExhausted } = req.query;
+      const { rawMaterialTypeId, includeExhausted } = req.query;
       const result = await inventoryService.listBatches({
-        grainTypeId: grainTypeId as string | undefined,
+        rawMaterialTypeId: rawMaterialTypeId as string | undefined,
         includeExhausted: includeExhausted === 'true',
       });
       res.json({ data: result });

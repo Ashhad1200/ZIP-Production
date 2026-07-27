@@ -14,6 +14,7 @@ import {
   ChevronRight,
   UserCheck,
   TrendingDown,
+  Wallet,
 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 import { ROLES } from '../../utils/constants';
@@ -29,7 +30,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   {
     label: 'Dashboard',
-    path: '/',
+    path: '/dashboard',
     icon: <LayoutDashboard size={20} />,
     roles: Object.values(ROLES),
   },
@@ -166,6 +167,12 @@ const navItems: NavItem[] = [
     icon: <Settings size={20} />,
     roles: [ROLES.SUPER_ADMIN, ROLES.FINANCE_HEAD],
   },
+  {
+    label: 'Billing',
+    path: '/billing',
+    icon: <Wallet size={20} />,
+    roles: [ROLES.SUPER_ADMIN],
+  },
 ];
 
 interface SidebarProps {
@@ -275,7 +282,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               ) : (
                 <NavLink
                   to={item.path}
-                  end={item.path === '/'}
+                  end={item.path === '/dashboard'}
                   className={({ isActive }) => linkClass(isActive)}
                   title={collapsed ? item.label : undefined}
                 >

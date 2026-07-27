@@ -139,7 +139,7 @@ export interface VariantLookup {
   id: string;
   code: string;
   name: string;
-  standardGramsPerMeter: number;
+  standardConsumptionRatio: number;
 }
 
 // ─── API calls ───────────────────────────────────────────────────────────────

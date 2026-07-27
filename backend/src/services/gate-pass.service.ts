@@ -676,7 +676,7 @@ export class GatePassService {
    * Lookup: get variants for dropdown.
    */
   async getVariants() {
-    return prisma.zipperVariant.findMany({
+    return prisma.productVariant.findMany({
       where: { isDeleted: false },
       select: { id: true, code: true, name: true, metersPerCarton: true },
       orderBy: { code: 'asc' },

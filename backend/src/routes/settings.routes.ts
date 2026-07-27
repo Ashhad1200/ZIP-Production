@@ -42,9 +42,9 @@ router.put('/recipes/:id', authenticate, rbac(...adminOnly), settingsController.
 router.delete('/recipes/:id', authenticate, rbac(...adminOnly), settingsController.deleteRecipe.bind(settingsController));
 
 // Grain types
-router.get('/grain-types', authenticate, rbac(...adminOnly), settingsController.listGrainTypes.bind(settingsController));
-router.post('/grain-types', authenticate, rbac(...adminOnly), settingsController.createGrainType.bind(settingsController));
-router.put('/grain-types/:id', authenticate, rbac(...adminOnly), settingsController.updateGrainType.bind(settingsController));
+router.get('/grain-types', authenticate, rbac(...adminOnly), settingsController.listRawMaterialTypes.bind(settingsController));
+router.post('/grain-types', authenticate, rbac(...adminOnly), settingsController.createRawMaterialType.bind(settingsController));
+router.put('/grain-types/:id', authenticate, rbac(...adminOnly), settingsController.updateRawMaterialType.bind(settingsController));
 
 // Plants & machines
 router.get('/plants', authenticate, rbac(...adminOnly), settingsController.listPlants.bind(settingsController));

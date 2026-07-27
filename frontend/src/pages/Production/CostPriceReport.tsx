@@ -172,7 +172,7 @@ export function CostPriceReport() {
                         <div>{row.variant}</div>
                         {row.recipe && row.recipe.ingredients.length > 1 && (
                           <div className="mt-0.5 text-xs text-indigo-500">
-                            {row.recipe.ingredients.map((i) => `${i.grainTypeCode} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+                            {row.recipe.ingredients.map((i) => `${i.rawMaterialTypeCode} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
                           </div>
                         )}
                       </td>
@@ -268,7 +268,7 @@ function CostBreakdownDetail({ row }: { row: ShiftCostBreakdown }) {
           <FlaskConical size={14} className="text-indigo-600" />
           <span className="font-semibold text-indigo-700">Formula:</span>
           <span className="text-indigo-600">
-            {row.recipe.ingredients.map((i) => `${i.grainTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
+            {row.recipe.ingredients.map((i) => `${i.rawMaterialTypeName} ${i.ratioPercent.toFixed(0)}%`).join(' + ')}
           </span>
         </div>
       )}
@@ -391,7 +391,7 @@ function CostBreakdownDetail({ row }: { row: ShiftCostBreakdown }) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-green-200 text-left text-green-600">
-                  <th className="pb-1 pr-4">Grain Type</th>
+                  <th className="pb-1 pr-4">Raw Material Type</th>
                   <th className="pb-1 pr-4 text-right">Recipe %</th>
                   <th className="pb-1 pr-4 text-right">Bags Used</th>
                   <th className="pb-1 text-right">Cost</th>
@@ -399,8 +399,8 @@ function CostBreakdownDetail({ row }: { row: ShiftCostBreakdown }) {
               </thead>
               <tbody>
                 {row.ingredientCosts.map((ic) => (
-                  <tr key={ic.grainTypeCode} className="border-b border-green-100 last:border-0">
-                    <td className="py-1 pr-4 font-medium text-gray-700">{ic.grainTypeName}</td>
+                  <tr key={ic.rawMaterialTypeCode} className="border-b border-green-100 last:border-0">
+                    <td className="py-1 pr-4 font-medium text-gray-700">{ic.rawMaterialTypeName}</td>
                     <td className="py-1 pr-4 text-right text-gray-500">{ic.standardRatioPercent.toFixed(0)}%</td>
                     <td className="py-1 pr-4 text-right">{ic.actualBagsConsumed.toFixed(3)}</td>
                     <td className="py-1 text-right font-medium">{ic.actualCostDisplay}</td>

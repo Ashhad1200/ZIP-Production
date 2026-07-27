@@ -264,14 +264,14 @@ export class SettingsController {
 
   async listVariants(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const variants = await prisma.zipperVariant.findMany({
+      const variants = await prisma.productVariant.findMany({
         where: { isDeleted: false },
         include: {
-          grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
+          rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } },
           packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
           recipe: { select: { id: true, name: true } },
           ingredients: {
-            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
             orderBy: { ratioPercent: 'desc' },
           },
         },
@@ -291,16 +291,16 @@ export class SettingsController {
 
   async createVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { code, name, standardGramsPerMeter, description, ingredients, recipeId, packagingMaterialId } = req.body;
-      if (!code || !name || standardGramsPerMeter == null) {
+      const { code, name, standardConsumptionRatio, description, ingredients, recipeId, packagingMaterialId } = req.body;
+      if (!code || !name || standardConsumptionRatio == null) {
         res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'code, name, and standardGramsPerMeter are required' },
+          error: { code: 'VALIDATION_ERROR', message: 'code, name, and standardConsumptionRatio are required' },
         });
         return;
       }
 
       // If recipeId is provided, load recipe ingredients; otherwise require manual ingredients
-      let resolvedIngredients: { grainTypeId: string; ratioPercent: number }[] = [];
+      let resolvedIngredients: { rawMaterialTypeId: string; ratioPercent: number }[] = [];
       if (recipeId) {
         const recipe = await prisma.recipe.findUnique({
           where: { id: recipeId },
@@ -311,13 +311,13 @@ export class SettingsController {
           return;
         }
         resolvedIngredients = recipe.ingredients.map((i) => ({
-          grainTypeId: i.grainTypeId,
+          rawMaterialTypeId: i.rawMaterialTypeId,
           ratioPercent: Number(i.ratioPercent),
         }));
       } else {
         if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
           res.status(422).json({
-            error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient (grain type) or a recipe is required' },
+            error: { code: 'VALIDATION_ERROR', message: 'At least one ingredient (raw material type) or a recipe is required' },
           });
           return;
         }
@@ -332,11 +332,11 @@ export class SettingsController {
         return;
       }
 
-      const variant = await prisma.zipperVariant.create({
+      const variant = await prisma.productVariant.create({
         data: {
           code,
           name,
-          standardGramsPerMeter,
+          standardConsumptionRatio,
           metersPerCarton: req.body.metersPerCarton ?? null,
           packagingMaterialId: packagingMaterialId ?? null,
           recipeId: recipeId ?? null,
@@ -344,7 +344,7 @@ export class SettingsController {
           createdBy: req.user!.userId,
           ingredients: {
             create: resolvedIngredients.map((i) => ({
-              grainTypeId: i.grainTypeId,
+              rawMaterialTypeId: i.rawMaterialTypeId,
               ratioPercent: i.ratioPercent,
             })),
           },
@@ -353,7 +353,7 @@ export class SettingsController {
           recipe: { select: { id: true, name: true } },
           packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
           ingredients: {
-            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
           },
         },
       });
@@ -373,10 +373,10 @@ export class SettingsController {
   async updateVariant(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, standardGramsPerMeter, metersPerCarton, packagingMaterialId, description, isActive, ingredients, recipeId } = req.body;
+      const { name, standardConsumptionRatio, metersPerCarton, packagingMaterialId, description, isActive, ingredients, recipeId } = req.body;
 
       // Resolve ingredients: if recipeId changed, re-sync from recipe
-      let resolvedIngredients: { grainTypeId: string; ratioPercent: number }[] | undefined;
+      let resolvedIngredients: { rawMaterialTypeId: string; ratioPercent: number }[] | undefined;
       let newRecipeId: string | null | undefined;
 
       if (recipeId !== undefined) {
@@ -391,7 +391,7 @@ export class SettingsController {
             return;
           }
           resolvedIngredients = recipe.ingredients.map((i) => ({
-            grainTypeId: i.grainTypeId,
+            rawMaterialTypeId: i.rawMaterialTypeId,
             ratioPercent: Number(i.ratioPercent),
           }));
         } else {
@@ -425,16 +425,16 @@ export class SettingsController {
           await tx.variantIngredient.createMany({
             data: resolvedIngredients.map((i) => ({
               variantId: id,
-              grainTypeId: i.grainTypeId,
+              rawMaterialTypeId: i.rawMaterialTypeId,
               ratioPercent: i.ratioPercent,
             })),
           });
         }
-        return tx.zipperVariant.update({
+        return tx.productVariant.update({
           where: { id },
           data: {
             ...(name !== undefined && { name }),
-            ...(standardGramsPerMeter !== undefined && { standardGramsPerMeter }),
+            ...(standardConsumptionRatio !== undefined && { standardConsumptionRatio }),
             ...(metersPerCarton !== undefined && { metersPerCarton }),
             ...(packagingMaterialId !== undefined && { packagingMaterialId }),
             ...(newRecipeId !== undefined && { recipeId: newRecipeId }),
@@ -446,7 +446,7 @@ export class SettingsController {
             recipe: { select: { id: true, name: true } },
             packagingMaterial: { select: { id: true, name: true, unit: true, ratePerUnitPaisa: true } },
             ingredients: {
-              include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+              include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
               orderBy: { ratioPercent: 'desc' },
             },
           },
@@ -465,18 +465,18 @@ export class SettingsController {
     }
   }
 
-  // ─── Grain Type Management ─────────────────────────────────────────────────
+  // ─── Raw Material Type Management ─────────────────────────────────────────────────
 
-  async listGrainTypes(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async listRawMaterialTypes(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const grainTypes = await prisma.grainType.findMany({ where: { isDeleted: false } });
-      res.json({ data: grainTypes });
+      const rawMaterialTypes = await prisma.rawMaterialType.findMany({ where: { isDeleted: false } });
+      res.json({ data: rawMaterialTypes });
     } catch (error) {
       next(error);
     }
   }
 
-  async createGrainType(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async createRawMaterialType(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { code, name, bagWeightGrams, lowStockThresholdBags, description } = req.body;
       if (!code || !name || bagWeightGrams == null) {
@@ -485,20 +485,20 @@ export class SettingsController {
         });
         return;
       }
-      const grainType = await prisma.grainType.create({
+      const rawMaterialType = await prisma.rawMaterialType.create({
         data: { code, name, bagWeightGrams, lowStockThresholdBags, description, createdBy: req.user!.userId },
       });
-      res.status(201).json({ data: grainType });
+      res.status(201).json({ data: rawMaterialType });
     } catch (error) {
       next(error);
     }
   }
 
-  async updateGrainType(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async updateRawMaterialType(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
       const { name, bagWeightGrams, lowStockThresholdBags, description, isActive } = req.body;
-      const grainType = await prisma.grainType.update({
+      const rawMaterialType = await prisma.rawMaterialType.update({
         where: { id },
         data: {
           ...(name !== undefined && { name }),
@@ -509,7 +509,7 @@ export class SettingsController {
           updatedBy: req.user!.userId,
         },
       });
-      res.json({ data: grainType });
+      res.json({ data: rawMaterialType });
     } catch (error) {
       next(error);
     }
@@ -690,11 +690,14 @@ export class SettingsController {
         res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'value is required' } });
         return;
       }
-      const setting = await prisma.systemSetting.upsert({
-        where: { key },
-        update: { value },
-        create: { key, value },
-      });
+      // Manual find-then-write instead of .upsert(): Prisma's generated
+      // compound-unique input for organizationId_key requires a non-null
+      // string, but organizationId is nullable (legacy/default tenant).
+      const organizationId = req.user?.organizationId ?? null;
+      const existing = await prisma.systemSetting.findFirst({ where: { key, organizationId } });
+      const setting = existing
+        ? await prisma.systemSetting.update({ where: { id: existing.id }, data: { value } })
+        : await prisma.systemSetting.create({ data: { key, value, organizationId } });
       res.json({ data: setting });
     } catch (error) {
       next(error);
@@ -709,7 +712,7 @@ export class SettingsController {
         where: { isDeleted: false },
         include: {
           ingredients: {
-            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
             orderBy: { ratioPercent: 'desc' },
           },
         },
@@ -746,15 +749,15 @@ export class SettingsController {
           description: description ?? null,
           createdBy: req.user!.userId,
           ingredients: {
-            create: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
-              grainTypeId: i.grainTypeId,
+            create: ingredients.map((i: { rawMaterialTypeId: string; ratioPercent: number }) => ({
+              rawMaterialTypeId: i.rawMaterialTypeId,
               ratioPercent: i.ratioPercent,
             })),
           },
         },
         include: {
           ingredients: {
-            include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+            include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
           },
         },
       });
@@ -787,9 +790,9 @@ export class SettingsController {
         if (ingredients !== undefined) {
           await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
           await tx.recipeIngredient.createMany({
-            data: ingredients.map((i: { grainTypeId: string; ratioPercent: number }) => ({
+            data: ingredients.map((i: { rawMaterialTypeId: string; ratioPercent: number }) => ({
               recipeId: id,
-              grainTypeId: i.grainTypeId,
+              rawMaterialTypeId: i.rawMaterialTypeId,
               ratioPercent: i.ratioPercent,
             })),
           });
@@ -804,7 +807,7 @@ export class SettingsController {
           },
           include: {
             ingredients: {
-              include: { grainType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
+              include: { rawMaterialType: { select: { id: true, code: true, name: true, bagWeightGrams: true } } },
               orderBy: { ratioPercent: 'desc' },
             },
           },
@@ -820,7 +823,7 @@ export class SettingsController {
     try {
       const id = req.params.id as string;
       // Check if any variant uses this recipe
-      const usageCount = await prisma.zipperVariant.count({ where: { recipeId: id, isDeleted: false } });
+      const usageCount = await prisma.productVariant.count({ where: { recipeId: id, isDeleted: false } });
       if (usageCount > 0) {
         res.status(422).json({
           error: { code: 'IN_USE', message: `Cannot delete recipe — it is used by ${usageCount} variant(s). Unlink them first.` },

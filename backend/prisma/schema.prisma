@@ -145,9 +145,10 @@ model User {
 // ─── 2. Plant ───────────────────────────────────────────────────────────────
 
 model Plant {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  location String?
+  id             String  @id @default(uuid())
+  name           String
+  location       String?
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -159,12 +160,15 @@ model Plant {
   deletedBy String?
   version   Int       @default(1)
 
+  organization      Organization?     @relation(fields: [organizationId], references: [id])
   machines          Machine[]
   productionEntries ProductionEntry[]
   workers           Worker[]
   scrapSales        ScrapSale[]
 
+  @@unique([organizationId, name])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("plants")
 }
 
@@ -177,6 +181,7 @@ model Machine {
   kwhRating              Decimal
   expectedOutputPerShift Int
   isActive               Boolean @default(true)
+  organizationId         String?
 
   // audit fields
   createdBy String
@@ -188,12 +193,14 @@ model Machine {
   deletedBy String?
   version   Int       @default(1)
 
-  plant Plant @relation(fields: [plantId], references: [id])
+  plant        Plant         @relation(fields: [plantId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   productionEntries ProductionEntry[]
 
   @@index([plantId])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("machines")
 }
 
@@ -206,6 +213,7 @@ model Worker {
   plantId     String?
   isActive    Boolean @default(true)
   shiftCostPaisa BigInt? // per-shift labor cost for cost-price calculation
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -218,6 +226,7 @@ model Worker {
   version   Int       @default(1)
 
   plant             Plant?                  @relation(fields: [plantId], references: [id])
+  organization      Organization?           @relation(fields: [organizationId], references: [id])
   productionEntries ProductionEntryWorker[]
   salaryRates       WorkerSalaryRate[]
   payrollRecords    PayrollRecord[]
@@ -225,24 +234,26 @@ model Worker {
 
   @@index([plantId])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("workers")
 }
 
-// ─── 5. ZipperVariant ───────────────────────────────────────────────────────
+// ─── 5. ProductVariant ───────────────────────────────────────────────────────
 
-model ZipperVariant {
+model ProductVariant {
   id                    String  @id @default(uuid())
-  code                  String  @unique
+  code                  String
   name                  String
   description           String?
-  standardGramsPerMeter Decimal
+  standardConsumptionRatio Decimal @map("standardGramsPerMeter") // raw-material consumed per unit of output (default vertical: grams per meter)
   metersPerCarton       Int?    // Standard meters per carton for inventory conversion (P-02)
   packagingMaterialId   String?
   recipeId              String?
-  // grainTypeId is kept for backward compat but is now nullable.
+  // rawMaterialTypeId is kept for backward compat but is now nullable.
   // Use the `ingredients` relation for multi-seed mixing.
-  grainTypeId           String?
+  rawMaterialTypeId           String?  @map("grainTypeId")
   isActive              Boolean @default(true)
+  organizationId        String?
 
   // audit fields
   createdBy String
@@ -254,9 +265,10 @@ model ZipperVariant {
   deletedBy String?
   version   Int       @default(1)
 
-  grainType          GrainType?           @relation(fields: [grainTypeId], references: [id])
+  rawMaterialType          RawMaterialType?           @relation(fields: [rawMaterialTypeId], references: [id])
   packagingMaterial  PackagingMaterial?   @relation(fields: [packagingMaterialId], references: [id])
   recipe             Recipe?              @relation(fields: [recipeId], references: [id])
+  organization       Organization?        @relation(fields: [organizationId], references: [id])
   ingredients        VariantIngredient[]
   productionEntries  ProductionEntry[]
   shiftVariants      ProductionShiftVariant[]
@@ -266,10 +278,12 @@ model ZipperVariant {
   finishedGoodsStock FinishedGoodsStock?
   salesReturnLineItems SalesReturnLineItem[]
 
+  @@unique([organizationId, code])
   @@index([packagingMaterialId])
   @@index([recipeId])
-  @@index([grainTypeId])
+  @@index([rawMaterialTypeId])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("zipper_variants")
 }
 
@@ -278,24 +292,25 @@ model ZipperVariant {
 model VariantIngredient {
   id           String  @id @default(uuid())
   variantId    String
-  grainTypeId  String
+  rawMaterialTypeId  String  @map("grainTypeId")
   ratioPercent Decimal // 0-100; all rows for a variant must sum to 100
 
-  variant   ZipperVariant @relation(fields: [variantId], references: [id])
-  grainType GrainType     @relation(fields: [grainTypeId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  rawMaterialType RawMaterialType     @relation(fields: [rawMaterialTypeId], references: [id])
 
-  @@unique([variantId, grainTypeId])
-  @@index([grainTypeId])
+  @@unique([variantId, rawMaterialTypeId])
+  @@index([rawMaterialTypeId])
   @@map("variant_ingredients")
 }
 
 // ─── 5c. Recipe (reusable grain-mix formula) ────────────────────────────────
 
 model Recipe {
-  id          String  @id @default(uuid())
-  name        String  @unique
-  description String?
-  isActive    Boolean @default(true)
+  id             String  @id @default(uuid())
+  name           String
+  description    String?
+  isActive       Boolean @default(true)
+  organizationId String?
 
   createdBy String
   createdAt DateTime  @default(now())
@@ -306,37 +321,41 @@ model Recipe {
   deletedBy String?
   version   Int       @default(1)
 
-  ingredients RecipeIngredient[]
-  variants    ZipperVariant[]
+  organization Organization?      @relation(fields: [organizationId], references: [id])
+  ingredients  RecipeIngredient[]
+  variants     ProductVariant[]
 
+  @@unique([organizationId, name])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("recipes")
 }
 
 model RecipeIngredient {
   id           String  @id @default(uuid())
   recipeId     String
-  grainTypeId  String
+  rawMaterialTypeId  String  @map("grainTypeId")
   ratioPercent Decimal // 0-100; all rows for a recipe must sum to 100
 
   recipe    Recipe    @relation(fields: [recipeId], references: [id])
-  grainType GrainType @relation(fields: [grainTypeId], references: [id])
+  rawMaterialType RawMaterialType @relation(fields: [rawMaterialTypeId], references: [id])
 
-  @@unique([recipeId, grainTypeId])
-  @@index([grainTypeId])
+  @@unique([recipeId, rawMaterialTypeId])
+  @@index([rawMaterialTypeId])
   @@map("recipe_ingredients")
 }
 
-// ─── 6. GrainType ───────────────────────────────────────────────────────────
+// ─── 6. RawMaterialType ───────────────────────────────────────────────────────────
 
-model GrainType {
+model RawMaterialType {
   id                    String   @id @default(uuid())
-  code                  String   @unique
+  code                  String
   name                  String
   description           String?
   bagWeightGrams        Int      @default(25000)
   lowStockThresholdBags Decimal?
   isActive              Boolean  @default(true)
+  organizationId        String?
 
   // audit fields
   createdBy String
@@ -348,14 +367,17 @@ model GrainType {
   deletedBy String?
   version   Int       @default(1)
 
-  zipperVariants       ZipperVariant[]
+  organization         Organization?          @relation(fields: [organizationId], references: [id])
+  productVariants       ProductVariant[]
   variantIngredients   VariantIngredient[]
   recipeIngredients    RecipeIngredient[]
   rawMaterialStock     RawMaterialStock?
   rawMaterialPurchases RawMaterialPurchase[]
   rawMaterialBatches   RawMaterialBatch[]
 
+  @@unique([organizationId, code])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("grain_types")
 }
 
@@ -390,7 +412,7 @@ model ProductionEntry {
 
   plant   Plant                        @relation(fields: [plantId], references: [id])
   machine Machine?                     @relation(fields: [machineId], references: [id])
-  variant ZipperVariant?               @relation(fields: [variantId], references: [id])
+  variant ProductVariant?               @relation(fields: [variantId], references: [id])
   workers ProductionEntryWorker[]
   batchConsumptions ProductionBatchConsumption[]
   shiftVariants     ProductionShiftVariant[]
@@ -415,7 +437,7 @@ model ProductionShiftVariant {
   scrapWeightGrams Int      @default(0)
 
   entry   ProductionEntry @relation(fields: [entryId], references: [id])
-  variant ZipperVariant   @relation(fields: [variantId], references: [id])
+  variant ProductVariant   @relation(fields: [variantId], references: [id])
 
   @@unique([entryId, variantId])
   @@index([entryId])
@@ -449,6 +471,7 @@ model ScrapSale {
   buyerName        String?
   plantId          String?
   journalEntryId   String?  @unique
+  organizationId   String?
 
   // audit fields
   createdBy String
@@ -462,10 +485,12 @@ model ScrapSale {
 
   plant        Plant?        @relation(fields: [plantId], references: [id])
   journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([plantId])
   @@index([date])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("scrap_sales")
 }
 
@@ -473,7 +498,7 @@ model ScrapSale {
 
 model RawMaterialPurchase {
   id               String         @id @default(uuid())
-  grainTypeId      String
+  rawMaterialTypeId      String  @map("grainTypeId")
   vendorId         String?        // Vendor who supplied this purchase (PU-01 + PU-02)
   numberOfBags     Decimal
   ratePerBagPaisa  BigInt
@@ -481,6 +506,7 @@ model RawMaterialPurchase {
   purchaseDate     DateTime       @db.Date
   source           PurchaseSource
   journalEntryId   String?        @unique
+  organizationId   String?
 
   // audit fields
   createdBy String
@@ -492,28 +518,31 @@ model RawMaterialPurchase {
   deletedBy String?
   version   Int       @default(1)
 
-  grainType    GrainType          @relation(fields: [grainTypeId], references: [id])
+  rawMaterialType    RawMaterialType          @relation(fields: [rawMaterialTypeId], references: [id])
   vendor       Vendor?            @relation(fields: [vendorId], references: [id])
   journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+  organization Organization?      @relation(fields: [organizationId], references: [id])
   batch        RawMaterialBatch?
 
-  @@index([grainTypeId])
+  @@index([rawMaterialTypeId])
   @@index([vendorId])
   @@index([purchaseDate])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("raw_material_purchases")
 }
 
 // ─── 10a. Vendor (grain bag suppliers) ─────────────────────────────────────
 
 model Vendor {
-  id          String  @id @default(uuid())
-  name        String  @unique
-  contactName String?
-  phone       String?
-  address     String?
-  grainTypes  String? // Comma-separated grain type codes they supply
-  isActive    Boolean @default(true)
+  id             String  @id @default(uuid())
+  name           String
+  contactName    String?
+  phone          String?
+  address        String?
+  rawMaterialTypes     String? // Comma-separated grain type codes they supply
+  isActive       Boolean @default(true)
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -525,10 +554,13 @@ model Vendor {
   deletedBy String?
   version   Int       @default(1)
 
-  purchases RawMaterialPurchase[]
+  organization         Organization?               @relation(fields: [organizationId], references: [id])
+  purchases            RawMaterialPurchase[]
   packagingAdjustments PackagingStockAdjustment[]
 
+  @@unique([organizationId, name])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("vendors")
 }
 
@@ -536,7 +568,7 @@ model Vendor {
 
 model RawMaterialBatch {
   id               String         @id @default(uuid())
-  grainTypeId      String
+  rawMaterialTypeId      String  @map("grainTypeId")
   purchaseId       String         @unique
   bagsTotal        Decimal
   bagsRemaining    Decimal
@@ -544,6 +576,7 @@ model RawMaterialBatch {
   purchaseDate     DateTime       @db.Date
   source           PurchaseSource
   isExhausted      Boolean        @default(false)
+  organizationId   String?
 
   // audit fields
   createdBy String
@@ -551,13 +584,15 @@ model RawMaterialBatch {
   updatedBy String?
   updatedAt DateTime  @updatedAt
 
-  grainType    GrainType                     @relation(fields: [grainTypeId], references: [id])
+  rawMaterialType    RawMaterialType                     @relation(fields: [rawMaterialTypeId], references: [id])
   purchase     RawMaterialPurchase           @relation(fields: [purchaseId], references: [id])
+  organization Organization?                 @relation(fields: [organizationId], references: [id])
   consumptions ProductionBatchConsumption[]
 
-  @@index([grainTypeId])
-  @@index([grainTypeId, isExhausted])
+  @@index([rawMaterialTypeId])
+  @@index([rawMaterialTypeId, isExhausted])
   @@index([purchaseDate])
+  @@index([organizationId])
   @@map("raw_material_batches")
 }
 
@@ -586,6 +621,7 @@ model ElectricityRate {
   effectiveFrom    DateTime  @db.Date
   effectiveTo      DateTime? @db.Date
   notes            String?
+  organizationId   String?
 
   // audit fields
   createdBy String
@@ -593,16 +629,20 @@ model ElectricityRate {
   updatedBy String?
   updatedAt DateTime  @updatedAt
 
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
   @@index([effectiveFrom])
+  @@index([organizationId])
   @@map("electricity_rates")
 }
 
 // ─── 11. RawMaterialStock ───────────────────────────────────────────────────
 
 model RawMaterialStock {
-  id          String  @id @default(uuid())
-  grainTypeId String  @unique
-  currentBags Decimal
+  id             String  @id @default(uuid())
+  rawMaterialTypeId    String  @unique @map("grainTypeId")
+  currentBags    Decimal
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -614,9 +654,11 @@ model RawMaterialStock {
   deletedBy String?
   version   Int       @default(1)
 
-  grainType GrainType @relation(fields: [grainTypeId], references: [id])
+  rawMaterialType    RawMaterialType     @relation(fields: [rawMaterialTypeId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([updatedAt])
+  @@index([organizationId])
   @@map("raw_material_stock")
 }
 
@@ -627,6 +669,7 @@ model FinishedGoodsStock {
   variantId         String @unique
   currentMeters     Int
   lowStockThreshold Int?
+  organizationId    String?
 
   // audit fields
   createdBy String
@@ -638,9 +681,11 @@ model FinishedGoodsStock {
   deletedBy String?
   version   Int       @default(1)
 
-  variant ZipperVariant @relation(fields: [variantId], references: [id])
+  variant      ProductVariant @relation(fields: [variantId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([updatedAt])
+  @@index([organizationId])
   @@map("finished_goods_stock")
 }
 
@@ -648,13 +693,14 @@ model FinishedGoodsStock {
 
 model Client {
   id                  String  @id @default(uuid())
-  name                String  @unique
+  name                String
   contactPerson       String?
   phone               String?
   address             String?
   paymentCycleDays    Int     @default(30)
   accountId           String? @unique
   openingBalancePaisa BigInt  @default(0) // Day-0 outstanding balance (F-01)
+  organizationId      String?
 
   // audit fields
   createdBy String
@@ -672,8 +718,11 @@ model Client {
   journalEntryLines JournalEntryLine[]
   salesReturns      SalesReturn[]
   account           Account?           @relation(fields: [accountId], references: [id])
+  organization      Organization?      @relation(fields: [organizationId], references: [id])
 
+  @@unique([organizationId, name])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("clients")
 }
 
@@ -686,6 +735,7 @@ model ClientRate {
   ratePerMeterPaisa BigInt
   effectiveFrom     DateTime
   effectiveTo       DateTime?
+  organizationId    String?
 
   // audit fields
   createdBy String
@@ -697,12 +747,14 @@ model ClientRate {
   deletedBy String?
   version   Int       @default(1)
 
-  client  Client        @relation(fields: [clientId], references: [id])
-  variant ZipperVariant @relation(fields: [variantId], references: [id])
+  client       Client        @relation(fields: [clientId], references: [id])
+  variant      ProductVariant @relation(fields: [variantId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([clientId])
   @@index([variantId])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("client_rates")
 }
 
@@ -710,7 +762,7 @@ model ClientRate {
 
 model GatePass {
   id                   String         @id @default(uuid())
-  gatePassNumber       String         @unique
+  gatePassNumber       String
   clientId             String
   date                 DateTime       @db.Date
   issuingManagerName   String
@@ -725,6 +777,7 @@ model GatePass {
   totalAmountPaisa     BigInt
   paymentDueDate       DateTime       @db.Date
   journalEntryId       String?        @unique
+  organizationId       String?
 
   // audit fields
   createdBy String
@@ -738,16 +791,19 @@ model GatePass {
 
   client        Client              @relation(fields: [clientId], references: [id])
   order         Order?              @relation(fields: [orderId], references: [id])
+  organization  Organization?       @relation(fields: [organizationId], references: [id])
   lineItems     GatePassLineItem[]
   salesReturns  SalesReturn[]
   journalEntry  JournalEntry?       @relation(fields: [journalEntryId], references: [id])
 
+  @@unique([organizationId, gatePassNumber])
   @@index([clientId])
   @@index([orderId])
   @@index([status])
   @@index([date])
   @@index([clientId, date])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("gate_passes")
 }
 
@@ -762,7 +818,7 @@ model GatePassLineItem {
   lineAmountPaisa   BigInt
 
   gatePass GatePass      @relation(fields: [gatePassId], references: [id])
-  variant  ZipperVariant @relation(fields: [variantId], references: [id])
+  variant  ProductVariant @relation(fields: [variantId], references: [id])
   salesReturnLineItems SalesReturnLineItem[]
 
   @@index([gatePassId])
@@ -774,13 +830,14 @@ model GatePassLineItem {
 
 model SalesReturn {
   id               String   @id @default(uuid())
-  returnNumber     String   @unique
+  returnNumber     String
   gatePassId       String
   clientId         String
   date             DateTime @db.Date
   reason           String?
   totalAmountPaisa BigInt
   journalEntryId   String?  @unique
+  organizationId   String?
 
   // audit fields
   createdBy String
@@ -791,11 +848,14 @@ model SalesReturn {
   gatePass     GatePass              @relation(fields: [gatePassId], references: [id])
   client       Client                @relation(fields: [clientId], references: [id])
   journalEntry JournalEntry?         @relation(fields: [journalEntryId], references: [id])
+  organization Organization?         @relation(fields: [organizationId], references: [id])
   lineItems    SalesReturnLineItem[]
 
+  @@unique([organizationId, returnNumber])
   @@index([gatePassId])
   @@index([clientId])
   @@index([date])
+  @@index([organizationId])
   @@map("sales_returns")
 }
 
@@ -810,7 +870,7 @@ model SalesReturnLineItem {
 
   salesReturn      SalesReturn      @relation(fields: [salesReturnId], references: [id])
   gatePassLineItem GatePassLineItem @relation(fields: [gatePassLineItemId], references: [id])
-  variant          ZipperVariant    @relation(fields: [variantId], references: [id])
+  variant          ProductVariant    @relation(fields: [variantId], references: [id])
 
   @@index([salesReturnId])
   @@index([gatePassLineItemId])
@@ -822,13 +882,14 @@ model SalesReturnLineItem {
 
 model Order {
   id                String      @id @default(uuid())
-  orderNumber       String      @unique
+  orderNumber       String
   clientId          String
   metersOrdered     Int
   totalAmountPaisa  BigInt
   deliveryDeadline  DateTime    @db.Date
   metersDelivered   Int         @default(0)
   status            OrderStatus @default(PENDING)
+  organizationId    String?
 
   // audit fields
   createdBy String
@@ -840,14 +901,17 @@ model Order {
   deletedBy String?
   version   Int       @default(1)
 
-  client     Client          @relation(fields: [clientId], references: [id])
-  lineItems  OrderLineItem[]
-  gatePasses GatePass[]
+  client       Client          @relation(fields: [clientId], references: [id])
+  organization Organization?   @relation(fields: [organizationId], references: [id])
+  lineItems    OrderLineItem[]
+  gatePasses   GatePass[]
 
+  @@unique([organizationId, orderNumber])
   @@index([clientId])
   @@index([status])
   @@index([clientId, status])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("orders")
 }
 
@@ -860,7 +924,7 @@ model OrderLineItem {
   ratePerMeterPaisa BigInt
 
   order   Order         @relation(fields: [orderId], references: [id])
-  variant ZipperVariant @relation(fields: [variantId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
 
   @@index([orderId])
   @@index([variantId])
@@ -870,36 +934,41 @@ model OrderLineItem {
 // ─── 18. Account ────────────────────────────────────────────────────────────
 
 model Account {
-  id          String      @id @default(uuid())
-  code        String      @unique
-  name        String
-  accountType AccountType
-  parentId    String?
-  isGroup     Boolean     @default(false)
-  isActive    Boolean     @default(true)
+  id             String      @id @default(uuid())
+  code           String
+  name           String
+  accountType    AccountType
+  parentId       String?
+  isGroup        Boolean     @default(false)
+  isActive       Boolean     @default(true)
+  organizationId String?
 
   parent            Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
   children          Account[]          @relation("AccountHierarchy")
+  organization      Organization?      @relation(fields: [organizationId], references: [id])
   journalEntryLines JournalEntryLine[]
   client            Client?
 
+  @@unique([organizationId, code])
   @@index([parentId])
   @@index([accountType])
+  @@index([organizationId])
   @@map("accounts")
 }
 
 // ─── 19. JournalEntry ───────────────────────────────────────────────────────
 
 model JournalEntry {
-  id            String             @id @default(uuid())
-  entryNumber   String             @unique
-  entryDate     DateTime           @db.Date
-  description   String?
-  status        JournalEntryStatus @default(DRAFT)
-  referenceType String?
-  referenceId   String?
-  postedAt      DateTime?
-  postedBy      String?
+  id             String             @id @default(uuid())
+  entryNumber    String
+  entryDate      DateTime           @db.Date
+  description    String?
+  status         JournalEntryStatus @default(DRAFT)
+  referenceType  String?
+  referenceId    String?
+  postedAt       DateTime?
+  postedBy       String?
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -911,6 +980,7 @@ model JournalEntry {
   deletedBy String?
   version   Int       @default(1)
 
+  organization        Organization?         @relation(fields: [organizationId], references: [id])
   lines               JournalEntryLine[]
   gatePass            GatePass?
   voucher             Voucher?
@@ -919,9 +989,11 @@ model JournalEntry {
   payrollRecord       PayrollRecord?
   salesReturn         SalesReturn?
 
+  @@unique([organizationId, entryNumber])
   @@index([entryDate])
   @@index([status])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("journal_entries")
 }
 
@@ -951,7 +1023,7 @@ model JournalEntryLine {
 
 model Voucher {
   id              String         @id @default(uuid())
-  voucherNumber   String         @unique
+  voucherNumber   String
   title           String
   description     String?
   date            DateTime       @db.Date
@@ -965,6 +1037,7 @@ model Voucher {
   approvedAt      DateTime?
   rejectionReason String?
   journalEntryId  String?        @unique
+  organizationId  String?
 
   // audit fields
   createdBy String
@@ -980,22 +1053,26 @@ model Voucher {
   company      Company         @relation(fields: [companyId], references: [id])
   journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
   approver     User?           @relation("VoucherApprover", fields: [approvedBy], references: [id])
+  organization Organization?   @relation(fields: [organizationId], references: [id])
 
+  @@unique([organizationId, voucherNumber])
   @@index([categoryId])
   @@index([companyId])
   @@index([approvalStatus])
   @@index([date])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("vouchers")
 }
 
 // ─── 22. ExpenseCategory ────────────────────────────────────────────────────
 
 model ExpenseCategory {
-  id       String  @id @default(uuid())
-  name     String
-  parentId String?
-  isActive Boolean @default(true)
+  id             String  @id @default(uuid())
+  name           String
+  parentId       String?
+  isActive       Boolean @default(true)
+  organizationId String?
 
   // audit fields
   createdBy String
@@ -1007,12 +1084,14 @@ model ExpenseCategory {
   deletedBy String?
   version   Int       @default(1)
 
-  parent   ExpenseCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children ExpenseCategory[] @relation("CategoryHierarchy")
-  vouchers Voucher[]
+  parent       ExpenseCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     ExpenseCategory[] @relation("CategoryHierarchy")
+  organization Organization?     @relation(fields: [organizationId], references: [id])
+  vouchers     Voucher[]
 
   @@index([parentId])
   @@index([isDeleted])
+  @@index([organizationId])
   @@map("expense_categories")
 }
 
@@ -1059,47 +1138,58 @@ model Notification {
   isRead          Boolean          @default(false)
   readAt          DateTime?
   createdAt       DateTime         @default(now())
+  organizationId  String?
 
-  recipient User? @relation(fields: [recipientUserId], references: [id])
+  recipient    User?         @relation(fields: [recipientUserId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([recipientUserId])
   @@index([recipientRole])
   @@index([isRead])
   @@index([recipientUserId, isRead])
+  @@index([organizationId])
   @@map("notifications")
 }
 
 // ─── 25. AuditLog ───────────────────────────────────────────────────────────
 
 model AuditLog {
-  id            String      @id @default(uuid())
-  entityType    String
-  entityId      String
-  action        AuditAction
-  previousValue Json?
-  newValue      Json
-  changedFields String[]
-  userId        String
-  reason        String?
-  timestamp     DateTime    @default(now())
-  ipAddress     String?
+  id             String      @id @default(uuid())
+  entityType     String
+  entityId       String
+  action         AuditAction
+  previousValue  Json?
+  newValue       Json
+  changedFields  String[]
+  userId         String
+  reason         String?
+  timestamp      DateTime    @default(now())
+  ipAddress      String?
+  organizationId String?
 
-  user User @relation(fields: [userId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([entityType, entityId])
   @@index([userId])
   @@index([timestamp])
+  @@index([organizationId])
   @@map("audit_logs")
 }
 
 // ─── 26. SystemSetting ──────────────────────────────────────────────────────
 
 model SystemSetting {
-  id          String  @id @default(uuid())
-  key         String  @unique
-  value       String
-  description String?
+  id             String  @id @default(uuid())
+  key            String
+  value          String
+  description    String?
+  organizationId String?
 
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
   @@map("system_settings")
 }
 
@@ -1156,15 +1246,18 @@ model PayrollRecord {
   chequeNumber          String?
   journalEntryId        String?     @unique
   notes                 String?
+  organizationId        String?
 
   createdBy String
   createdAt DateTime @default(now())
 
   worker       Worker        @relation(fields: [workerId], references: [id])
   journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@unique([workerId, month, year])
   @@index([year, month])
+  @@index([organizationId])
   @@map("payroll_records")
 }
 
@@ -1179,12 +1272,16 @@ model MonthlyOverhead {
   packingPaisa        BigInt   @default(0)
   miscellaneousPaisa  BigInt   @default(0)
   notes               String?
+  organizationId      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([year, month])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, year, month])
   @@index([year, month])
+  @@index([organizationId])
   @@map("monthly_overheads")
 }
 
@@ -1199,10 +1296,13 @@ model PackagingMaterial {
   lowStockThreshold Int?
   notes        String?
   isActive     Boolean  @default(true)
+  organizationId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  organization Organization? @relation(fields: [organizationId], references: [id])
   adjustments  PackagingStockAdjustment[]
-  variants     ZipperVariant[]
+  variants     ProductVariant[]
+  @@index([organizationId])
   @@map("packaging_materials")
 }
 
@@ -1218,12 +1318,15 @@ model PackagingStockAdjustment {
   referenceType String?
   referenceId   String?
   notes       String?
+  organizationId String?
   createdBy   String
   createdAt   DateTime @default(now())
   material    PackagingMaterial @relation(fields: [materialId], references: [id])
   vendor      Vendor?           @relation(fields: [vendorId], references: [id])
+  organization Organization?    @relation(fields: [organizationId], references: [id])
   @@index([materialId])
   @@index([referenceType, referenceId])
+  @@index([organizationId])
   @@map("packaging_stock_adjustments")
 }
 
@@ -1257,6 +1360,37 @@ model Organization {
   companies     Company[]
   subscriptions Subscription[]
   payments      Payment[]
+
+  // Tenant-scoped business data (Phase 2 — see docs/SAAS-PLATFORM-BLUEPRINT.md)
+  plants                Plant[]
+  machines              Machine[]
+  workers               Worker[]
+  productVariants        ProductVariant[]
+  recipes               Recipe[]
+  rawMaterialTypes            RawMaterialType[]
+  scrapSales            ScrapSale[]
+  rawMaterialPurchases  RawMaterialPurchase[]
+  vendors               Vendor[]
+  rawMaterialBatches    RawMaterialBatch[]
+  electricityRates      ElectricityRate[]
+  rawMaterialStocks     RawMaterialStock[]
+  finishedGoodsStocks   FinishedGoodsStock[]
+  clients               Client[]
+  clientRates           ClientRate[]
+  gatePasses            GatePass[]
+  salesReturns          SalesReturn[]
+  orders                Order[]
+  accounts              Account[]
+  journalEntries        JournalEntry[]
+  vouchers              Voucher[]
+  expenseCategories     ExpenseCategory[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  systemSettings        SystemSetting[]
+  payrollRecords        PayrollRecord[]
+  monthlyOverheads      MonthlyOverhead[]
+  packagingMaterials    PackagingMaterial[]
+  packagingAdjustments  PackagingStockAdjustment[]
 
   @@index([status])
   @@map("organizations")
