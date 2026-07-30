@@ -34,25 +34,28 @@ async function main() {
   console.log('🌱 Starting production seed...');
 
   // ─── 1. Users ───────────────────────────────────────────────────────────
+  // Dev-only default password for every seeded demo user — not for production tenants.
   console.log('👤 Seeding users...');
+  const DEV_PASSWORD = 'Passw0rd!';
   const usersData = [
-    { name: 'Owner', role: 'SUPER_ADMIN' as const },
-    { name: 'Finance Head', role: 'FINANCE_HEAD' as const },
-    { name: 'Production Head', role: 'PRODUCTION_HEAD' as const },
-    { name: 'Logistics Head', role: 'LOGISTICS_HEAD' as const },
-    { name: 'Marketing Head', role: 'MARKETING_HEAD' as const },
-    { name: 'HR Head', role: 'HR_HEAD' as const },
-    { name: 'Data Entry Operator', role: 'PRODUCTION_HEAD' as const },
+    { name: 'Owner', email: 'owner@zipdemo.local', role: 'SUPER_ADMIN' as const },
+    { name: 'Finance Head', email: 'finance@zipdemo.local', role: 'FINANCE_HEAD' as const },
+    { name: 'Production Head', email: 'production@zipdemo.local', role: 'PRODUCTION_HEAD' as const },
+    { name: 'Logistics Head', email: 'logistics@zipdemo.local', role: 'LOGISTICS_HEAD' as const },
+    { name: 'Marketing Head', email: 'marketing@zipdemo.local', role: 'MARKETING_HEAD' as const },
+    { name: 'HR Head', email: 'hr@zipdemo.local', role: 'HR_HEAD' as const },
+    { name: 'Data Entry Operator', email: 'data-entry@zipdemo.local', role: 'PRODUCTION_HEAD' as const },
   ];
 
   for (const u of usersData) {
     await prisma.user.upsert({
-      where: { name: u.name },
-      update: { role: u.role },
-      create: { name: u.name, role: u.role },
+      where: { email: u.email },
+      update: { name: u.name, role: u.role },
+      create: { name: u.name, email: u.email, passwordHash: hashPassword(DEV_PASSWORD), role: u.role },
     });
   }
-  const admin = await prisma.user.findFirst({ where: { name: 'Owner' } });
+  console.log(`   Demo login password for all seeded users: ${DEV_PASSWORD}`);
+  const admin = await prisma.user.findFirst({ where: { email: 'owner@zipdemo.local' } });
   const adminId = admin!.id;
 
   // ─── 2. Chart of Accounts ──────────────────────────────────────────────

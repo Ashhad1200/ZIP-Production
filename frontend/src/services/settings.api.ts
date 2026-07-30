@@ -5,6 +5,7 @@ import api from './api';
 export interface User {
   id: string;
   name: string;
+  email: string;
   role: string;
   isActive: boolean;
   lastLoginAt: string | null;
@@ -147,11 +148,11 @@ export const settingsApi = {
   // Users
   getUsers: () =>
     api.get<{ data: User[] }>('/settings/users').then((r) => r.data),
-  createUser: (data: { name: string; role: string }) =>
+  createUser: (data: { name: string; email: string; password: string; role: string }) =>
     api.post<{ data: User }>('/settings/users', data).then((r) => r.data),
   updateUser: (
     id: string,
-    data: Partial<{ name: string; role: string; isActive: boolean }>,
+    data: Partial<{ name: string; email: string; password: string; role: string; isActive: boolean }>,
   ) => api.put<{ data: User }>(`/settings/users/${id}`, data).then((r) => r.data),
   deactivateUser: (id: string) =>
     api.delete(`/settings/users/${id}`).then((r) => r.data),

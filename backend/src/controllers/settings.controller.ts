@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import prisma from '../config/database';
 import { AuthenticatedRequest } from '../types';
+import { hashPassword } from '../utils/password';
 
 export class SettingsController {
   // ─── User Management ───────────────────────────────────────────────────────
@@ -8,7 +9,7 @@ export class SettingsController {
   async listUsers(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const users = await prisma.user.findMany({
-        select: { id: true, name: true, role: true, isActive: true, lastLoginAt: true, createdAt: true },
+        select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true },
       });
       res.json({ data: users });
     } catch (error) {
@@ -18,12 +19,19 @@ export class SettingsController {
 
   async createUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { name, role } = req.body;
-      if (!name || !role) {
-        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'name and role are required' } });
+      const { name, email, password, role } = req.body;
+      if (!name || !email || !password || !role) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'name, email, password and role are required' } });
         return;
       }
-      const user = await prisma.user.create({ data: { name, role } });
+      if (password.length < 8) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Password must be at least 8 characters' } });
+        return;
+      }
+      const user = await prisma.user.create({
+        data: { name, email, passwordHash: hashPassword(password), role },
+        select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      });
       res.status(201).json({ data: user });
     } catch (error) {
       next(error);
@@ -33,14 +41,21 @@ export class SettingsController {
   async updateUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const { name, role, isActive } = req.body;
+      const { name, email, password, role, isActive } = req.body;
+      if (password && password.length < 8) {
+        res.status(422).json({ error: { code: 'VALIDATION_ERROR', message: 'Password must be at least 8 characters' } });
+        return;
+      }
       const user = await prisma.user.update({
         where: { id },
         data: {
           ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(password && { passwordHash: hashPassword(password) }),
           ...(role !== undefined && { role }),
           ...(isActive !== undefined && { isActive }),
         },
+        select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
       });
       res.json({ data: user });
     } catch (error) {

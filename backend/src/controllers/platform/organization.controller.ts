@@ -16,14 +16,21 @@ export class OrganizationController {
   /** Public — self-serve signup from the marketing site. */
   async signup(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationName, contactName, contactEmail, contactPhone, industry, adminUserName, planCode } = req.body;
+      const { organizationName, contactName, contactEmail, contactPhone, industry, adminUserName, password, planCode } = req.body;
 
-      if (!organizationName || !contactName || !contactEmail || !adminUserName || !planCode) {
+      if (!organizationName || !contactName || !contactEmail || !adminUserName || !password || !planCode) {
         res.status(422).json({
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'organizationName, contactName, contactEmail, adminUserName and planCode are required',
+            message: 'organizationName, contactName, contactEmail, adminUserName, password and planCode are required',
           },
+        });
+        return;
+      }
+
+      if (password.length < 8) {
+        res.status(422).json({
+          error: { code: 'VALIDATION_ERROR', message: 'Password must be at least 8 characters' },
         });
         return;
       }
@@ -35,6 +42,7 @@ export class OrganizationController {
         contactPhone,
         industry,
         adminUserName,
+        password,
         planCode,
       });
 

@@ -120,11 +120,15 @@ enum PaymentVerificationStatus {
 // ─── 1. User ────────────────────────────────────────────────────────────────
 
 model User {
-  id             String    @id @default(uuid())
-  name           String    @unique
-  role           Role
-  isActive       Boolean   @default(true)
-  lastLoginAt    DateTime?
+  id           String    @id @default(uuid())
+  name         String
+  // Nullable during migration: pre-existing kiosk-mode rows have neither.
+  // Both are required at the application layer for every new user going forward.
+  email        String?   @unique
+  passwordHash String?
+  role         Role
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
   // Nullable during Phase 1: existing single-tenant rows have no organization.
   // Phase 2 backfills this to a default Organization and makes it required.
   organizationId String?

@@ -4,8 +4,7 @@ import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Public endpoints (kiosk mode)
-router.get('/users', authController.getUsers.bind(authController));
+// Public endpoints
 router.post('/login', authController.login.bind(authController));
 
 // Protected endpoints

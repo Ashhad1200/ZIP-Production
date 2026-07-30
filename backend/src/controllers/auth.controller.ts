@@ -3,28 +3,18 @@ import { authService } from '../services/auth.service';
 import { AuthenticatedRequest } from '../types';
 
 export class AuthController {
-  async getUsers(req: Request, res: Response, next: NextFunction) {
-    try {
-      const organizationSlug = typeof req.query.org === 'string' ? req.query.org : undefined;
-      const users = await authService.getActiveUsers(organizationSlug);
-      res.json({ data: users });
-    } catch (error) {
-      next(error);
-    }
-  }
-  
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const { userId } = req.body;
-      
-      if (!userId) {
+      const { email, password } = req.body;
+
+      if (!email || !password) {
         res.status(422).json({
-          error: { code: 'VALIDATION_ERROR', message: 'userId is required' }
+          error: { code: 'VALIDATION_ERROR', message: 'email and password are required' }
         });
         return;
       }
-      
-      const result = await authService.login(userId);
+
+      const result = await authService.login(email, password);
       
       // Set httpOnly cookie
       res.cookie('token', result.token, {

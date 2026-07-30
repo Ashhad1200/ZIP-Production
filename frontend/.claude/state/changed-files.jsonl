@@ -7,3 +7,17 @@
 {"file":"src/router.tsx","action":"Edit","timestamp":"2026-07-25T10:58:05Z","important":false}
 {"file":"src/components/layout/Sidebar.tsx","action":"Edit","timestamp":"2026-07-25T11:01:54Z","important":false}
 {"file":"E:/ZIP-Production/specs/002-saas-platform/tasks.md","action":"Edit","timestamp":"2026-07-26T10:08:31Z","important":false}
+{"file":"E:/ZIP-Production/backend/prisma/schema.prisma","action":"Edit","timestamp":"2026-07-30T08:42:48Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/services/auth.service.ts","action":"Edit","timestamp":"2026-07-30T08:43:40Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/controllers/auth.controller.ts","action":"Edit","timestamp":"2026-07-30T08:44:31Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/routes/auth.routes.ts","action":"Edit","timestamp":"2026-07-30T08:44:54Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/controllers/platform/organization.controller.ts","action":"Edit","timestamp":"2026-07-30T08:45:53Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/services/platform/organization.service.ts","action":"Edit","timestamp":"2026-07-30T08:46:33Z","important":false}
+{"file":"E:/ZIP-Production/backend/src/controllers/settings.controller.ts","action":"Edit","timestamp":"2026-07-30T08:48:46Z","important":false}
+{"file":"E:/ZIP-Production/backend/prisma/seed.ts","action":"Edit","timestamp":"2026-07-30T08:49:25Z","important":false}
+{"file":"src/context/AuthContext.tsx","action":"Edit","timestamp":"2026-07-30T08:50:22Z","important":false}
+{"file":"src/types/index.ts","action":"Edit","timestamp":"2026-07-30T08:51:23Z","important":false}
+{"file":"src/pages/Login/LoginPage.tsx","action":"Write","timestamp":"2026-07-30T08:51:48Z","important":false}
+{"file":"src/pages/Marketing/LandingPage.tsx","action":"Edit","timestamp":"2026-07-30T08:52:29Z","important":false}
+{"file":"src/services/settings.api.ts","action":"Edit","timestamp":"2026-07-30T08:53:24Z","important":false}
+{"file":"src/pages/Settings/UserManagement.tsx","action":"Edit","timestamp":"2026-07-30T08:54:16Z","important":false}

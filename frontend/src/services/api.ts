@@ -13,7 +13,12 @@ const WRITE_METHODS = ['post', 'put', 'patch', 'delete'];
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // /auth/me is a silent "am I logged in" probe used on every page (including
+    // the public landing page) — a 401 from it just means "logged out", not
+    // "session expired mid-use". Redirecting on it bounced every visitor
+    // straight to /login before the router ever got to render the landing page.
+    const isAuthCheck = error.config?.url?.includes('/auth/me');
+    if (error.response?.status === 401 && !isAuthCheck) {
       // Avoid redirect loop on login page
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';

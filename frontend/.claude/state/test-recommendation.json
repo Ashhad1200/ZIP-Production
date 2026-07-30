@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-25T11:03:23Z",
-  "changed_file": "src/router.tsx",
+  "timestamp": "2026-07-30T09:46:52Z",
+  "changed_file": "src/pages/Marketing/LandingPage.tsx",
   "test_command": "npx vitest run --reporter=verbose",
   "related_test": "",
   "recommendation": "テストの実行を推奨します"

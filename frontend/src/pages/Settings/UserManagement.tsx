@@ -51,6 +51,8 @@ function UserFormModal({ user, onClose, onSuccess }: UserFormModalProps) {
   const isEdit = !!user;
 
   const [name, setName] = useState(user?.name ?? '');
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState(user?.role ?? '');
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -59,13 +61,16 @@ function UserFormModal({ user, onClose, onSuccess }: UserFormModalProps) {
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Name is required';
+    if (!email.trim()) errs.email = 'Email is required';
     if (!role) errs.role = 'Role is required';
+    if (!isEdit && password.length < 8) errs.password = 'Password must be at least 8 characters';
+    if (isEdit && password && password.length < 8) errs.password = 'Password must be at least 8 characters';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [name, role]);
+  }, [name, email, role, password, isEdit]);
 
   const createMutation = useMutation({
-    mutationFn: (payload: { name: string; role: string }) =>
+    mutationFn: (payload: { name: string; email: string; password: string; role: string }) =>
       settingsApi.createUser(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-users'] });
@@ -78,7 +83,7 @@ function UserFormModal({ user, onClose, onSuccess }: UserFormModalProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: Partial<{ name: string; role: string; isActive: boolean }>) =>
+    mutationFn: (payload: Partial<{ name: string; email: string; password: string; role: string; isActive: boolean }>) =>
       settingsApi.updateUser(user!.id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings-users'] });
@@ -96,9 +101,9 @@ function UserFormModal({ user, onClose, onSuccess }: UserFormModalProps) {
     e.preventDefault();
     if (!validate()) return;
     if (isEdit) {
-      updateMutation.mutate({ name: name.trim(), role, isActive });
+      updateMutation.mutate({ name: name.trim(), email: email.trim(), ...(password && { password }), role, isActive });
     } else {
-      createMutation.mutate({ name: name.trim(), role });
+      createMutation.mutate({ name: name.trim(), email: email.trim(), password, role });
     }
   };
 
@@ -125,6 +130,38 @@ function UserFormModal({ user, onClose, onSuccess }: UserFormModalProps) {
           />
           {errors.name && (
             <p className="mt-1 text-xs text-red-600">{errors.name}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Email
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.email ? 'border-red-400' : 'border-gray-300'}`}
+            placeholder="name@company.com"
+          />
+          {errors.email && (
+            <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            {isEdit ? 'New password (leave blank to keep current)' : 'Password'}
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${errors.password ? 'border-red-400' : 'border-gray-300'}`}
+            placeholder={isEdit ? '••••••••' : 'At least 8 characters'}
+          />
+          {errors.password && (
+            <p className="mt-1 text-xs text-red-600">{errors.password}</p>
           )}
         </div>
 
@@ -206,6 +243,7 @@ export function UserManagement() {
 
   const columns: Column<User>[] = [
     { key: 'name', header: 'Name', sortable: true },
+    { key: 'email', header: 'Email', hideOnMobile: true },
     {
       key: 'role',
       header: 'Role',

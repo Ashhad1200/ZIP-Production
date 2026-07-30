@@ -1,5 +1,6 @@
 import prisma from '../../config/database';
 import { recomputeSubscriptionStatus } from './subscription.service';
+import { hashPassword } from '../../utils/password';
 
 function slugify(name: string): string {
   return name
@@ -16,18 +17,15 @@ export interface SignupInput {
   contactPhone?: string;
   industry?: string;
   adminUserName: string;
+  password: string;
   planCode: string;
 }
 
 export class OrganizationService {
   /**
    * Public self-serve signup: creates the Organization, its first tenant
-   * User (SUPER_ADMIN), and a TRIAL Subscription against the chosen Plan.
-   *
-   * Note (Phase 1 limitation): User.name is still globally unique across the
-   * whole app (pre-multi-tenancy constraint) — see docs/SAAS-PLATFORM-BLUEPRINT.md
-   * Phase 2. Signup will fail with a clear conflict error if adminUserName is
-   * already taken by another tenant until that constraint is scoped per org.
+   * User (SUPER_ADMIN, with a real email+password login), and a TRIAL
+   * Subscription against the chosen Plan.
    */
   async signup(input: SignupInput) {
     const plan = await prisma.plan.findUnique({ where: { code: input.planCode, isActive: true } });
@@ -38,6 +36,14 @@ export class OrganizationService {
     const existingEmail = await prisma.organization.findUnique({ where: { contactEmail: input.contactEmail } });
     if (existingEmail) {
       throw Object.assign(new Error('An organization with this email already exists'), {
+        statusCode: 409,
+        code: 'EMAIL_TAKEN',
+      });
+    }
+
+    const existingUserEmail = await prisma.user.findUnique({ where: { email: input.contactEmail } });
+    if (existingUserEmail) {
+      throw Object.assign(new Error('An account with this email already exists'), {
         statusCode: 409,
         code: 'EMAIL_TAKEN',
       });
@@ -70,9 +76,12 @@ export class OrganizationService {
       const adminUser = await tx.user.create({
         data: {
           name: input.adminUserName,
+          email: input.contactEmail,
+          passwordHash: hashPassword(input.password),
           role: 'SUPER_ADMIN',
           organizationId: organization.id,
         },
+        select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
       });
 
       const subscription = await tx.subscription.create({
