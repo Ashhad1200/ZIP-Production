@@ -73,7 +73,7 @@ export function VerifyGatePass() {
       <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
         {/* Logo */}
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">ZIP Production</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Mizan</h1>
           <p className="text-sm text-gray-500">Gate Pass Verification</p>
         </div>
 

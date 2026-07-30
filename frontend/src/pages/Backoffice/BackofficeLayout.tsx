@@ -21,7 +21,7 @@ export function BackofficeLayout() {
       <header className="sticky top-0 z-10 border-b bg-gray-900 text-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <span className="font-bold">BD Matrix Backoffice</span>
+            <span className="font-bold">Treevoxa Backoffice</span>
             <nav className="hidden gap-1 md:flex">
               {navItems.map(({ to, label, icon: Icon, end }) => (
                 <NavLink

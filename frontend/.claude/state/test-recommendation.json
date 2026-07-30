@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-30T09:46:52Z",
-  "changed_file": "src/pages/Marketing/LandingPage.tsx",
+  "timestamp": "2026-07-30T10:16:17Z",
+  "changed_file": "src/pages/Backoffice/BackofficeLayout.tsx",
   "test_command": "npx vitest run --reporter=verbose",
   "related_test": "",
   "recommendation": "テストの実行を推奨します"

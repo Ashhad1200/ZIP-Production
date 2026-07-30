@@ -43,3 +43,7 @@
 {"file":"frontend/src/pages/Backoffice/index.ts","action":"Write","timestamp":"2026-07-24T19:44:11Z","important":false}
 {"file":"frontend/src/main.tsx","action":"Edit","timestamp":"2026-07-24T19:44:42Z","important":false}
 {"file":"frontend/src/router.tsx","action":"Edit","timestamp":"2026-07-24T19:45:55Z","important":false}
+{"file":"frontend/src/locales/en.json","action":"Edit","timestamp":"2026-07-30T10:13:11Z","important":false}
+{"file":"frontend/index.html","action":"Edit","timestamp":"2026-07-30T10:13:21Z","important":false}
+{"file":"frontend/src/pages/Login/LoginPage.tsx","action":"Edit","timestamp":"2026-07-30T10:13:35Z","important":false}
+{"file":"C:/Users/mrb/.claude/projects/E--ZIP-Production/memory/project_saas_pivot.md","action":"Edit","timestamp":"2026-07-30T10:18:01Z","important":false}

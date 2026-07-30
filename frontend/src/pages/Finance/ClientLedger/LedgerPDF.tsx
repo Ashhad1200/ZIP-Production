@@ -106,7 +106,7 @@ interface Props {
 
 export function LedgerPDF({ clientName, entries, summary, generatedAt }: Props) {
   return (
-    <Document title={`Ledger — ${clientName}`} author="ZIP Production ERP">
+    <Document title={`Ledger — ${clientName}`} author="Mizan">
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
@@ -159,7 +159,7 @@ export function LedgerPDF({ clientName, entries, summary, generatedAt }: Props) 
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>ZIP Production ERP</Text>
+          <Text style={styles.footerText}>Mizan</Text>
           <Text style={styles.footerText}>Confidential — For internal use only</Text>
         </View>
       </Page>

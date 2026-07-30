@@ -129,7 +129,7 @@ function GatePassPDFDocument({
       <Page size="A4" style={styles.page}>
         {/* Company Header */}
         <View style={styles.header}>
-          <Text style={styles.companyName}>ZIP Production</Text>
+          <Text style={styles.companyName}>Mizan</Text>
           <Text style={styles.subtitle}>GATE PASS</Text>
         </View>
 

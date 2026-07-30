@@ -120,7 +120,7 @@ function Nav() {
     <div style={{ background: INK }} className="sticky top-0 z-40">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 lg:px-8">
         <div style={{ background: PAPER, color: INK }} className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-extrabold tracking-tight">
-          Factory Ledger
+          Mizan
         </div>
         <div className="hidden items-center gap-7 lg:flex">
           <a href="#features" className="text-sm font-medium" style={{ color: '#ffffffb3' }}>Features</a>
@@ -287,7 +287,7 @@ function Founder() {
           <span className="font-mono text-[10px] lg:text-[11px]" style={{ color: MUTED_LIGHT }}>founder photo</span>
         </div>
         <div className="mt-4 text-xl font-extrabold tracking-[-0.02em] lg:mt-4.5 lg:text-2xl">Ashhad</div>
-        <div className="mt-1 text-[13px]" style={{ color: MUTED_LIGHT }}>Founder, BD Matrix</div>
+        <div className="mt-1 text-[13px]" style={{ color: MUTED_LIGHT }}>Founder, Treevoxa</div>
       </div>
     </div>
   );
@@ -603,7 +603,7 @@ function CtaFooter() {
         <div className="mt-11 flex flex-wrap items-start justify-between gap-6 border-t pt-7 lg:mt-14 lg:pt-8" style={{ borderColor: '#ffffff1f' }}>
           <div>
             <div style={{ background: PAPER, color: INK }} className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-extrabold tracking-tight">
-              Factory Ledger
+              Mizan
             </div>
             <p className="mt-2.5 text-xs" style={{ color: '#ffffff80' }}>
               Production-to-ledger software for Pakistani manufacturers.
@@ -614,7 +614,7 @@ function CtaFooter() {
               <a href="#faq">FAQ</a>
             </div>
           </div>
-          <p className="text-[11px]" style={{ color: '#ffffff59' }}>© 2026 BD Matrix. All rights reserved.</p>
+          <p className="text-[11px]" style={{ color: '#ffffff59' }}>© 2026 Treevoxa. All rights reserved.</p>
         </div>
       </div>
     </div>

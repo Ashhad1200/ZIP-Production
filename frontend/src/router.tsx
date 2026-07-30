@@ -63,7 +63,7 @@ const MonthlyOverheadPage = React.lazy(() =>
 );
 const NotFoundPage = React.lazy(() => import('./pages/NotFound'));
 
-// Backoffice (BD Matrix platform admin — separate auth plane, see PlatformAuthContext)
+// Backoffice (Treevoxa platform admin — separate auth plane, see PlatformAuthContext)
 const BackofficeLoginPage = React.lazy(() =>
   import('./pages/Backoffice').then((m) => ({ default: m.BackofficeLoginPage })),
 );
@@ -185,7 +185,7 @@ export const routes: RouteObject[] = [
     element: <Lazy element={LandingPage} />,
   },
 
-  // Backoffice (BD Matrix platform admin — independent auth plane from the tenant app above)
+  // Backoffice (Treevoxa platform admin — independent auth plane from the tenant app above)
   {
     path: '/backoffice/login',
     element: <Lazy element={BackofficeLoginPage} />,

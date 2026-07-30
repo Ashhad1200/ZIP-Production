@@ -126,7 +126,7 @@ export function CompanyManagement() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. ZIP Production Pvt Ltd"
+                  placeholder="e.g. Acme Manufacturing Pvt Ltd"
                   className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />

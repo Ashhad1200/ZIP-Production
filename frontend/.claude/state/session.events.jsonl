@@ -4,3 +4,5 @@
 {"id":"event-000001","type":"session.stop","ts":"2026-07-30T09:09:29Z","state":"stopped"}
 {"id":"event-000001","type":"session.stop","ts":"2026-07-30T09:47:34Z","state":"stopped"}
 {"id":"event-000001","type":"session.stop","ts":"2026-07-30T09:53:22Z","state":"stopped"}
+{"id":"event-000001","type":"session.stop","ts":"2026-07-30T09:59:34Z","state":"stopped"}
+{"id":"event-000001","type":"session.stop","ts":"2026-07-30T10:07:09Z","state":"stopped"}
