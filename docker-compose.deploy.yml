@@ -1,0 +1,62 @@
+# Coolify deployment stack for Mizan (frontend + backend + postgres).
+# Build context is the repo root for both images. Domains, TLS and traefik
+# labels are managed by Coolify (docker_compose_domains); secrets come from
+# the Coolify application environment, not this file.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mizan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: mizan
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mizan -d mizan"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://mizan:${POSTGRES_PASSWORD}@db:5432/mizan
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: "24h"
+      VERIFY_TOKEN_EXPIRY_HOURS: "48"
+      CORS_ORIGIN: https://mizan.treevoxa.com
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    expose:
+      - "3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: https://apimizan.treevoxa.com/api/v1
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+
+volumes:
+  db_data:
